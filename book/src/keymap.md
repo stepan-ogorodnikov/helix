@@ -464,24 +464,29 @@ you to selectively add search terms to your selections.
 
 ## Picker
 
-Keys to use within picker. Remapping currently not supported.
+Keys to use within picker. Override them in `[keys.picker]`. A binding of `nop` drops that key so the [prompt](#prompt) handles it. Other prompt keys work in pickers except where a picker binding takes them.
 See the documentation page on [pickers](./pickers.md) for more info.
-[Prompt](#prompt) keybinds also work in pickers, except where they conflict with picker keybinds.
 
-| Key                          | Description                                                |
-| -----                        | -------------                                              |
-| `Shift-Tab`, `Up`, `Ctrl-p`  | Previous entry                                             |
-| `Tab`, `Down`, `Ctrl-n`      | Next entry                                                 |
-| `PageUp`, `Ctrl-u`           | Page up                                                    |
-| `PageDown`, `Ctrl-d`         | Page down                                                  |
-| `Home`                       | Go to first entry                                          |
-| `End`                        | Go to last entry                                           |
-| `Enter`                      | Open selected                                              |
-| `Alt-Enter`                  | Open selected in the background without closing the picker |
-| `Ctrl-s`                     | Open horizontally                                          |
-| `Ctrl-v`                     | Open vertically                                            |
-| `Ctrl-t`                     | Toggle preview                                             |
-| `Escape`, `Ctrl-c`           | Close picker                                               |
+```toml
+[keys.picker]
+C-k = "previous"
+C-j = "next"
+```
+
+| Key                         | Command            | Description                                                |
+| -----                       | -----              | -------------                                              |
+| `Shift-Tab`, `Up`, `Ctrl-p` | `previous`         | Previous entry                                             |
+| `Tab`, `Down`, `Ctrl-n`     | `next`             | Next entry                                                 |
+| `PageUp`, `Ctrl-u`          | `page_up`          | Page up                                                    |
+| `PageDown`, `Ctrl-d`        | `page_down`        | Page down                                                  |
+| `Home`                      | `first`            | Go to first entry                                          |
+| `End`                       | `last`             | Go to last entry                                           |
+| `Enter`                     | `open`             | Open selected                                              |
+| `Alt-Enter`                 | `open_background`  | Open selected in the background without closing the picker |
+| `Ctrl-s`                    | `open_horizontal`  | Open horizontally                                          |
+| `Ctrl-v`                    | `open_vertical`    | Open vertically                                            |
+| `Ctrl-t`                    | `toggle_preview`   | Toggle preview                                             |
+| `Escape`, `Ctrl-c`          | `close`            | Close picker                                               |
 
 ## Prompt
 

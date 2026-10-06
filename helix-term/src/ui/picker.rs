@@ -2,9 +2,7 @@ mod handlers;
 mod query;
 
 use crate::{
-    alt,
     compositor::{self, Component, Compositor, Context, Event, EventResult},
-    ctrl, key, shift,
     ui::{
         self,
         document::{render_document, LinePos, TextRenderer},
@@ -15,6 +13,7 @@ use crate::{
 };
 use futures_util::future::BoxFuture;
 use helix_event::AsyncHook;
+use helix_view::editor::PickerCommand;
 use nucleo::pattern::{CaseMatching, Normalization};
 use nucleo::{Config, Nucleo};
 use thiserror::Error;
@@ -1086,32 +1085,33 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
             EventResult::Consumed(Some(callback))
         };
 
-        match key_event {
-            shift!(Tab) | key!(Up) | ctrl!('p') => {
+        let command = ctx.editor.config().picker_keys.get(&key_event).copied();
+        match command {
+            Some(PickerCommand::Previous) => {
                 self.move_by(1, Direction::Backward);
             }
-            key!(Tab) | key!(Down) | ctrl!('n') => {
+            Some(PickerCommand::Next) => {
                 self.move_by(1, Direction::Forward);
             }
-            key!(PageDown) | ctrl!('d') => {
+            Some(PickerCommand::PageDown) => {
                 self.page_down();
             }
-            key!(PageUp) | ctrl!('u') => {
+            Some(PickerCommand::PageUp) => {
                 self.page_up();
             }
-            key!(Home) => {
+            Some(PickerCommand::First) => {
                 self.to_start();
             }
-            key!(End) => {
+            Some(PickerCommand::Last) => {
                 self.to_end();
             }
-            key!(Esc) | ctrl!('c') => return close_fn(self),
-            alt!(Enter) => {
+            Some(PickerCommand::Close) => return close_fn(self),
+            Some(PickerCommand::OpenBackground) => {
                 if let Some(option) = self.selection() {
                     (self.callback_fn)(ctx, option, self.default_action);
                 }
             }
-            key!(Enter) => {
+            Some(PickerCommand::Open) => {
                 // If the prompt has a history completion and is empty, use enter to accept
                 // that completion
                 if let Some(completion) = self
@@ -1146,22 +1146,23 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
                     return close_fn(self);
                 }
             }
-            ctrl!('s') => {
+            Some(PickerCommand::OpenHorizontal) => {
                 if let Some(option) = self.selection() {
                     (self.callback_fn)(ctx, option, Action::HorizontalSplit);
                 }
                 return close_fn(self);
             }
-            ctrl!('v') => {
+            Some(PickerCommand::OpenVertical) => {
                 if let Some(option) = self.selection() {
                     (self.callback_fn)(ctx, option, Action::VerticalSplit);
                 }
                 return close_fn(self);
             }
-            ctrl!('t') => {
+            Some(PickerCommand::TogglePreview) => {
                 self.toggle_preview();
             }
-            _ => {
+            // `nop` and unbound keys edit the query.
+            Some(PickerCommand::Nop) | None => {
                 self.prompt_handle_event(event, ctx);
             }
         }

@@ -291,6 +291,117 @@ where
     Ok(chars)
 }
 
+/// What a key does inside a picker. `Nop` removes a default binding so the
+/// key is handled by the picker prompt instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerCommand {
+    Previous,
+    Next,
+    PageUp,
+    PageDown,
+    First,
+    Last,
+    Open,
+    OpenBackground,
+    OpenHorizontal,
+    OpenVertical,
+    TogglePreview,
+    Close,
+    Nop,
+}
+
+impl PickerCommand {
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "previous" => Self::Previous,
+            "next" => Self::Next,
+            "page_up" => Self::PageUp,
+            "page_down" => Self::PageDown,
+            "first" => Self::First,
+            "last" => Self::Last,
+            "open" => Self::Open,
+            "open_background" => Self::OpenBackground,
+            "open_horizontal" => Self::OpenHorizontal,
+            "open_vertical" => Self::OpenVertical,
+            "toggle_preview" => Self::TogglePreview,
+            "close" => Self::Close,
+            "nop" => Self::Nop,
+            _ => return None,
+        })
+    }
+}
+
+pub fn default_picker_keys() -> HashMap<KeyEvent, PickerCommand> {
+    use crate::keyboard::{KeyCode, KeyModifiers};
+
+    let mut keys = HashMap::new();
+    let bind = |keys: &mut HashMap<KeyEvent, PickerCommand>,
+                code: KeyCode,
+                modifiers: KeyModifiers,
+                command: PickerCommand| {
+        keys.insert(KeyEvent { code, modifiers }, command);
+    };
+
+    let none = KeyModifiers::NONE;
+    let ctrl = KeyModifiers::CONTROL;
+    let shift = KeyModifiers::SHIFT;
+    let alt = KeyModifiers::ALT;
+
+    bind(&mut keys, KeyCode::Tab, shift, PickerCommand::Previous);
+    bind(&mut keys, KeyCode::Up, none, PickerCommand::Previous);
+    bind(&mut keys, KeyCode::Char('p'), ctrl, PickerCommand::Previous);
+    bind(&mut keys, KeyCode::Tab, none, PickerCommand::Next);
+    bind(&mut keys, KeyCode::Down, none, PickerCommand::Next);
+    bind(&mut keys, KeyCode::Char('n'), ctrl, PickerCommand::Next);
+    bind(&mut keys, KeyCode::PageDown, none, PickerCommand::PageDown);
+    bind(&mut keys, KeyCode::Char('d'), ctrl, PickerCommand::PageDown);
+    bind(&mut keys, KeyCode::PageUp, none, PickerCommand::PageUp);
+    bind(&mut keys, KeyCode::Char('u'), ctrl, PickerCommand::PageUp);
+    bind(&mut keys, KeyCode::Home, none, PickerCommand::First);
+    bind(&mut keys, KeyCode::End, none, PickerCommand::Last);
+    bind(&mut keys, KeyCode::Enter, none, PickerCommand::Open);
+    bind(
+        &mut keys,
+        KeyCode::Enter,
+        alt,
+        PickerCommand::OpenBackground,
+    );
+    bind(
+        &mut keys,
+        KeyCode::Char('s'),
+        ctrl,
+        PickerCommand::OpenHorizontal,
+    );
+    bind(
+        &mut keys,
+        KeyCode::Char('v'),
+        ctrl,
+        PickerCommand::OpenVertical,
+    );
+    bind(
+        &mut keys,
+        KeyCode::Char('t'),
+        ctrl,
+        PickerCommand::TogglePreview,
+    );
+    bind(&mut keys, KeyCode::Esc, none, PickerCommand::Close);
+    bind(&mut keys, KeyCode::Char('c'), ctrl, PickerCommand::Close);
+    keys
+}
+
+pub fn overlay_picker_keys(
+    keys: &mut HashMap<KeyEvent, PickerCommand>,
+    overlay: HashMap<KeyEvent, PickerCommand>,
+) {
+    for (key, command) in overlay {
+        if command == PickerCommand::Nop {
+            keys.remove(&key);
+        } else {
+            keys.insert(key, command);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", default, deny_unknown_fields)]
 pub struct Config {
@@ -434,6 +545,10 @@ pub struct Config {
     pub buffer_picker: BufferPickerConfig,
     /// Workspace-trust configuration.
     pub workspace_trust: WorkspaceTrustConfig,
+    /// Picker bindings. Not read from `[editor]`; the term config fills this
+    /// from `[keys.picker]` after merging with the defaults.
+    #[serde(skip, default = "default_picker_keys")]
+    pub picker_keys: HashMap<KeyEvent, PickerCommand>,
 }
 
 /// User-facing configuration for `[editor.workspace-trust]`.
@@ -1240,6 +1355,7 @@ impl Default for Config {
             kitty_keyboard_protocol: Default::default(),
             buffer_picker: BufferPickerConfig::default(),
             workspace_trust: WorkspaceTrustConfig::default(),
+            picker_keys: default_picker_keys(),
         }
     }
 }
