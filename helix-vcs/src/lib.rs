@@ -18,7 +18,7 @@ pub use diff::{DiffHandle, Hunk};
 
 mod status;
 
-pub use status::FileChange;
+pub use status::{visible_changes, ChangeKind, ChangeView, FileChange};
 
 /// Contains all active diff providers. Diff providers are compiled in via features. Currently
 /// only `git` is supported.
@@ -63,17 +63,24 @@ impl DiffProviderRegistry {
 
     /// Fire-and-forget changed file iteration. Runs everything in a background task. Keeps
     /// iteration until `on_change` returns `false`.
+    ///
+    /// Each item is either unstaged (index vs worktree, including untracked files) or staged
+    /// (`HEAD` vs index).
     pub fn for_each_changed_file(
         self,
         cwd: PathBuf,
         trust_full: bool,
-        f: impl Fn(Result<FileChange>) -> bool + Send + 'static,
+        mut f: impl FnMut(Result<(ChangeKind, FileChange)>) -> bool + Send + 'static,
     ) {
         tokio::task::spawn_blocking(move || {
             if self
                 .providers
                 .iter()
-                .find_map(|provider| provider.for_each_changed_file(&cwd, trust_full, &f).ok())
+                .find_map(|provider| {
+                    provider
+                        .for_each_changed_file(&cwd, trust_full, &mut f)
+                        .ok()
+                })
                 .is_none()
             {
                 f(Err(anyhow!("no diff provider returns success")));
@@ -131,7 +138,7 @@ impl DiffProvider {
         &self,
         cwd: &Path,
         trust_full: bool,
-        f: impl Fn(Result<FileChange>) -> bool,
+        f: impl FnMut(Result<(ChangeKind, FileChange)>) -> bool,
     ) -> Result<()> {
         match self {
             #[cfg(feature = "git")]

@@ -307,6 +307,9 @@ pub enum PickerCommand {
     OpenVertical,
     TogglePreview,
     Close,
+    /// Cycle the changed-file picker: unstaged, staged, then both.
+    /// Other pickers pass this key through to the prompt.
+    CycleChanges,
     Nop,
 }
 
@@ -325,6 +328,7 @@ impl PickerCommand {
             "open_vertical" => Self::OpenVertical,
             "toggle_preview" => Self::TogglePreview,
             "close" => Self::Close,
+            "cycle_changes" => Self::CycleChanges,
             "nop" => Self::Nop,
             _ => return None,
         })
@@ -383,6 +387,13 @@ pub fn default_picker_keys() -> HashMap<KeyEvent, PickerCommand> {
         KeyCode::Char('t'),
         ctrl,
         PickerCommand::TogglePreview,
+    );
+    // Changed-file picker only. Other pickers pass this key to the prompt.
+    bind(
+        &mut keys,
+        KeyCode::Char('g'),
+        ctrl,
+        PickerCommand::CycleChanges,
     );
     bind(&mut keys, KeyCode::Esc, none, PickerCommand::Close);
     bind(&mut keys, KeyCode::Char('c'), ctrl, PickerCommand::Close);
