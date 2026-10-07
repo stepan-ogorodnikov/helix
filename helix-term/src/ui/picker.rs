@@ -174,12 +174,16 @@ pub struct InjectorShutdown;
 
 impl<T, D> Injector<T, D> {
     pub fn push(&self, item: T) -> Result<(), InjectorShutdown> {
-        if self.version != self.picker_version.load(atomic::Ordering::Relaxed) {
+        if !self.is_alive() {
             return Err(InjectorShutdown);
         }
 
         inject_nucleo_item(&self.dst, &self.columns, item, &self.editor_data);
         Ok(())
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.version == self.picker_version.load(atomic::Ordering::Relaxed)
     }
 }
 
@@ -258,6 +262,11 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
 
     callback_fn: PickerCallback<T>,
     default_action: Action,
+    /// Drawn on the prompt line, before the match count. Empty for most pickers.
+    status_label: Option<Cow<'static, str>>,
+    /// Handles [`PickerCommand::CycleChanges`]. Absent on pickers that do not
+    /// have a change list, which then pass the key to the prompt.
+    on_cycle_changes: Option<Box<dyn Fn(&mut Self)>>,
 
     pub truncate_start: bool,
     /// Caches paths to documents
@@ -386,6 +395,8 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
             show_preview: true,
             callback_fn: Box::new(callback_fn),
             default_action: Action::Replace,
+            status_label: None,
+            on_cycle_changes: None,
             completion_height: 0,
             widths,
             preview_cache: HashMap::new(),
@@ -521,6 +532,32 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
 
     pub fn toggle_preview(&mut self) {
         self.show_preview = !self.show_preview;
+    }
+
+    pub fn with_status_label(mut self, label: &'static str) -> Self {
+        self.status_label = Some(Cow::Borrowed(label));
+        self
+    }
+
+    pub fn set_status_label(&mut self, label: &'static str) {
+        self.status_label = Some(Cow::Borrowed(label));
+    }
+
+    pub fn with_on_cycle_changes(mut self, cycle: impl Fn(&mut Self) + 'static) -> Self {
+        self.on_cycle_changes = Some(Box::new(cycle));
+        self
+    }
+
+    /// Drop the current items and show `items` instead. The query is kept.
+    /// The returned injector receives any items that arrive after this swap.
+    pub fn replace_items(&mut self, items: Vec<T>) -> Injector<T, D> {
+        self.matcher.restart(true);
+        self.cursor = 0;
+        let injector = self.injector();
+        for item in items {
+            let _ = injector.push(item);
+        }
+        injector
     }
 
     fn prompt_handle_event(&mut self, event: &Event, cx: &mut Context) -> EventResult {
@@ -707,12 +744,16 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
         // -- Render the input bar:
 
         let count = format!(
-            "{}{}/{}",
+            "{}{}{}/{}",
             if status.running || self.matcher.active_injectors() > 0 {
                 "(running) "
             } else {
                 ""
             },
+            self.status_label
+                .as_ref()
+                .map(|label| format!("{label} "))
+                .unwrap_or_default(),
             snapshot.matched_item_count(),
             snapshot.item_count(),
         );
@@ -1160,6 +1201,14 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
             }
             Some(PickerCommand::TogglePreview) => {
                 self.toggle_preview();
+            }
+            Some(PickerCommand::CycleChanges) => {
+                if let Some(cycle) = self.on_cycle_changes.take() {
+                    cycle(self);
+                    self.on_cycle_changes = Some(cycle);
+                } else {
+                    self.prompt_handle_event(event, ctx);
+                }
             }
             // `nop` and unbound keys edit the query.
             Some(PickerCommand::Nop) | None => {

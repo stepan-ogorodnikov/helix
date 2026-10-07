@@ -1,8 +1,9 @@
-use std::{fs::File, io::Write, path::Path, process::Command};
+use std::{collections::HashSet, fs::File, io::Write, path::Path, process::Command};
 
 use tempfile::TempDir;
 
 use crate::git;
+use crate::{ChangeKind, FileChange};
 
 fn exec_git_cmd(args: &str, git_dir: &Path) {
     let res = Command::new("git")
@@ -155,4 +156,83 @@ fn symlink_to_git_repo() {
 
     assert_eq!(git::get_diff_base(&file_link, true).unwrap(), contents);
     assert_eq!(git::get_diff_base(&file, true).unwrap(), contents);
+}
+
+fn change_label(change: &FileChange) -> &'static str {
+    match change {
+        FileChange::Untracked { .. } => "untracked",
+        FileChange::Added { .. } => "added",
+        FileChange::Modified { .. } => "modified",
+        FileChange::Conflict { .. } => "conflict",
+        FileChange::Deleted { .. } => "deleted",
+        FileChange::Renamed { .. } => "renamed",
+    }
+}
+
+#[test]
+fn changed_files_include_staged_and_unstaged() {
+    let temp_git = empty_git_repo();
+    let repo = temp_git.path();
+    for name in ["staged.txt", "unstaged.txt", "both.txt"] {
+        File::create(repo.join(name))
+            .unwrap()
+            .write_all(b"a")
+            .unwrap();
+    }
+    create_commit(repo, true);
+
+    File::create(repo.join("staged.txt"))
+        .unwrap()
+        .write_all(b"b")
+        .unwrap();
+    File::create(repo.join("unstaged.txt"))
+        .unwrap()
+        .write_all(b"b")
+        .unwrap();
+    File::create(repo.join("both.txt"))
+        .unwrap()
+        .write_all(b"b")
+        .unwrap();
+    File::create(repo.join("added.txt"))
+        .unwrap()
+        .write_all(b"a")
+        .unwrap();
+    exec_git_cmd("add staged.txt both.txt added.txt", repo);
+    File::create(repo.join("both.txt"))
+        .unwrap()
+        .write_all(b"c")
+        .unwrap();
+    File::create(repo.join("new.txt"))
+        .unwrap()
+        .write_all(b"a")
+        .unwrap();
+
+    let mut got = HashSet::new();
+    git::for_each_changed_file(repo, true, |change| {
+        let (kind, change) = change.unwrap();
+        let kind = match kind {
+            ChangeKind::Staged => "staged",
+            ChangeKind::Unstaged => "unstaged",
+        };
+        got.insert(format!(
+            "{kind} {} {}",
+            change_label(&change),
+            change.path().file_name().unwrap().to_string_lossy()
+        ));
+        true
+    })
+    .unwrap();
+
+    let expected: HashSet<_> = [
+        "staged modified staged.txt",
+        "staged modified both.txt",
+        "staged added added.txt",
+        "unstaged modified unstaged.txt",
+        "unstaged modified both.txt",
+        "unstaged untracked new.txt",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    assert_eq!(got, expected);
 }
