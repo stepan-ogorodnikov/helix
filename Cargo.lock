@@ -1699,6 +1699,7 @@ dependencies = [
  "serde_json",
  "signal-hook 0.4.4",
  "signal-hook-tokio",
+ "slotmap",
  "smallvec",
  "tempfile",
  "termina",
