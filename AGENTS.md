@@ -16,4 +16,6 @@ A static command stays as a wrapper in `commands.rs`. `static_commands!` binds t
 
 A typable command keeps its row in `TYPABLE_COMMAND_LIST`. Point `fun` at the moved function. If the body calls a private helper in `typed.rs`, nest the module at `helix-term/src/commands/typed/<name>.rs`. A child module can call the parent's private items, so the helper stays private. `:yank-diagnostics` calls `yank_register` this way.
 
+A config field stays on the upstream struct. Move the table to a sibling module and re-export it, so existing paths keep working. `Config::picker_keys` re-exports `picker_keys::PickerCommand` this way.
+
 Move tests with the body. Remove imports the hot file no longer uses.
