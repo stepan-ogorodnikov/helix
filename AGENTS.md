@@ -19,3 +19,7 @@ A typable command keeps its row in `TYPABLE_COMMAND_LIST`. Point `fun` at the mo
 A config field stays on the upstream struct. Move the table to a sibling module and re-export it, so existing paths keep working. `Config::picker_keys` re-exports `picker_keys::PickerCommand` this way.
 
 Move tests with the body. Remove imports the hot file no longer uses.
+
+## Plans
+
+A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the code. Each phase's commit marks the phase done in the plan and records what the work found. `fork/diff-review.md` is the example.
