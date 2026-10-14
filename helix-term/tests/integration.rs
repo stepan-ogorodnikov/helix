@@ -18,6 +18,7 @@ mod test {
     mod auto_pairs;
     mod command_line;
     mod commands;
+    mod fork_diff; // FORK: inline diff.
     mod movement;
     mod splits;
 }

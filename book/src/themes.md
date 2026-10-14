@@ -280,12 +280,15 @@ See also [#2380]
 - `diff` - version control changes
   - `plus` - additions
     - `gutter` - gutter indicator
+    - `view` - added lines in the inline diff (`toggle_inline_diff`)
   - `minus` - deletions
     - `gutter` - gutter indicator
+    - `view` - removed lines in the inline diff, falls back to `diff.minus`
   - `delta` - modifications
     - `moved` - renamed or moved files/changes
     - `conflict` - merge conflicts
     - `gutter` - gutter indicator
+    - `view` - modified lines in the inline diff
 
 - `embedded` - Interpolated expressions embedded in a string template (`${…}`)
 

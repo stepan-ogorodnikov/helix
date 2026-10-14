@@ -107,7 +107,7 @@ How it works:
   - If the diff worker asks for its write lock in between (`diff/worker.rs:73`), the fair lock makes the gutter's read wait behind the writer.
     The writer waits for the annotation's read lock, so the editor hangs.
   - This can happen: base updates never wait for the frame, and doc updates stop waiting after 12 ms.
-  - So the constructor calls `load()` once, copies the hunks, clones the base and doc `Rope`s (cheap), and drops the lock.
+  - So the constructor calls `load()` once, copies the hunks, clones the base `Rope` (cheap), and drops the lock.
   - Clamp indices. The copy can lag the buffer by a frame while you type, the same as the gutter.
 - Theme scopes, from #15631: `diff.{plus,minus,delta}.view`, `diff.delta.view.text`.
   - Removed rows use `theme.get("diff.minus.view")`.
@@ -125,8 +125,16 @@ Known limits:
 
 - Virtual rows can't be selected or edited. Only the new side is editable. Old-side editing is what #15631 is for.
 - Removed rows for a hunk that starts at line 0 can't render above line 0, because `LineAnnotation` only anchors after a line end. #15631 lists the same limit.
-  With rows above the new lines, this hits every hunk at line 0, modifications included. Render them after line 0 with a marker.
-- Mouse clicks below virtual rows need coordinate checks. #15631 reports click offset bugs with filler lines. `text_pos_at_screen_coords` takes the annotations, so this may just work. Verify it.
+  With rows above the new lines, this hits every hunk at line 0, modifications included. Phase 1 renders them after line 0, marked `↑` in the diff gutter.
+- Mouse clicks below virtual rows need coordinate checks. #15631 reports click offset bugs with filler lines. `text_pos_at_screen_coords` takes the annotations, so this may just work. Phase 1 didn't verify it.
+
+Found in phase 1:
+
+- A tinted line covers the cursorline.
+  The decoration comes after the cursorline because its rows must follow inline diagnostics, the same order as the annotations.
+- Removed lines after a last line with no trailing newline show no rows, because rows only follow a line ending.
+- The annotation and the decoration each copy the diff.
+  If the diff lands between the two copies, that frame is off, and the redraw the diff worker requests fixes it.
 
 ### 5.2 Review session (phase 3)
 
@@ -169,7 +177,7 @@ Known limits:
 | Hunk | Helix-native equivalent | Status |
 | --- | --- | --- |
 | `[` `]` hunks | `[g` `]g`, plus cross-file `review_*_hunk` | Exists / phase 3 |
-| Stack (unified) layout | Inline overlay | Phase 1 |
+| Stack (unified) layout | Inline overlay | Done (phase 1) |
 | Split layout | #15631 | Upstream |
 | Multi-file stream + sidebar | Review session + changed-files picker | Phase 3 (not one continuous scroll) |
 | Syntax highlighting | New side: already there. Removed rows: base parse | Phase 2 |
@@ -177,7 +185,7 @@ Known limits:
 | Agent notes inline | Notes LSP → diagnostics | Optional |
 | Watch mode | None. Base refresh on session navigation only | Partial |
 | Pager / difftool | `git diff \| hx` | Exists |
-| Edit while reviewing | Real buffer | Phase 1 |
+| Edit while reviewing | Real buffer | Done (phase 1) |
 | Stage / unstage hunk | `git apply --cached` | Phase 4 |
 | jj / Sapling | Gix only. jj colocated repos work through git | Upstream #12022 |
 
@@ -187,11 +195,12 @@ Seams (one line each, marked `// FORK:`):
 
 | File | Commits in last year | Seam |
 | --- | --- | --- |
-| `helix-view/src/view.rs` | 3 | Field `inline_diff: bool` on `View`. One `add_line_annotation` call in `text_annotations`. |
+| `helix-view/src/view.rs` | 3 | Field `inline_diff: bool` on `View` and its default in `View::new`. One call in `text_annotations`. |
 | `helix-term/src/ui/editor.rs` | 9 | One `add_decoration` call in `render_view`. |
 | `helix-term/src/commands.rs` | 39 | Static command rows plus one-line wrappers, as `changed_file_picker` does. |
 | `helix-term/src/commands/typed.rs` | 20 | `TYPABLE_COMMAND_LIST` rows. Bodies in `typed/<name>.rs`. |
-| `helix-view/src/annotations.rs`, `helix-term/src/ui/text_decorations.rs` | 1 | `mod diff;` |
+| `helix-view/src/annotations.rs`, `helix-term/src/ui/text_decorations.rs` | 1 | `mod diff;`, plus a re-export in `text_decorations.rs` |
+| `book/src/themes.md` | 8 | `view` under `diff.{plus,minus,delta}` |
 | `helix-term/src/commands/changed_file.rs` | fork-owned | "Start review" picker key |
 | `helix-term/tests/integration.rs` | 1 | `mod fork_diff;` in the `mod test` block |
 | `helix-view/src/editor.rs` | 16 | Only for a config field or statusline variant. Phase 1 needs none. |
@@ -213,13 +222,13 @@ The public `set_diff_base` and `diff_handle` are enough.
 
 ## 8. Phases
 
-| Phase | Scope | Fork-owned lines (rough) | Risk |
-| --- | --- | --- | --- |
-| 1. Inline MVP | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600 | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
-| 2. Polish | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600 | Medium: caching the base `Syntax` and wrap math |
-| 3. Review session | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500 | Low |
-| 4. Index base + staging | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
-| — Side-by-side | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
+| Phase | Status | Scope | Fork-owned lines (rough) | Risk |
+| --- | --- | --- | --- | --- |
+| 1. Inline MVP | Done | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600. Actual: about 410, plus 300 of tests. | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
+| 2. Polish | Next | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600 | Medium: caching the base `Syntax` and wrap math |
+| 3. Review session | Planned | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500 | Low |
+| 4. Index base + staging | Planned | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
+| — Side-by-side | Waiting on #15631 | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
 
 For scale: #15631's core file alone is 2038 lines.
 

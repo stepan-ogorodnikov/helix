@@ -172,6 +172,8 @@ pub struct View {
     // left to future work. For now we treat all views as focused and give them
     // each their own handler.
     pub diagnostics_handler: DiagnosticsHandler,
+    // FORK: inline diff, toggled per view.
+    pub inline_diff: bool,
 }
 
 impl fmt::Debug for View {
@@ -197,6 +199,7 @@ impl View {
             gutters,
             doc_revisions: HashMap::new(),
             diagnostics_handler: DiagnosticsHandler::new(),
+            inline_diff: false, // FORK: inline diff.
         }
     }
 
@@ -527,6 +530,9 @@ impl View {
                 config,
             ));
         }
+
+        // FORK: inline diff rows. Added after inline diagnostics, the same order as the decorations.
+        crate::annotations::diff::add_line_annotation(self, doc, &mut text_annotations);
 
         text_annotations
     }

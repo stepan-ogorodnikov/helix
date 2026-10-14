@@ -205,6 +205,8 @@ impl EditorView {
             inline_diagnostic_config,
             config.end_of_line_diagnostics,
         ));
+        // FORK: inline diff. Added after inline diagnostics, the same order as the annotations.
+        decorations.add_decoration(text_decorations::InlineDiff::new(doc, view, theme));
         render_document(
             surface,
             inner,

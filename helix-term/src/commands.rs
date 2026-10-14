@@ -1,6 +1,7 @@
 mod changed_file;
 pub(crate) mod dap;
 pub(crate) mod lsp;
+mod review; // FORK: inline diff.
 pub(crate) mod syntax;
 pub(crate) mod typed;
 
@@ -458,6 +459,7 @@ impl MappableCommand {
         goto_prev_change, "Goto previous change",
         goto_first_change, "Goto first change",
         goto_last_change, "Goto last change",
+        toggle_inline_diff, "Toggle inline diff in the current view",
         goto_line_start, "Goto line start",
         goto_line_end, "Goto line end",
         goto_column, "Goto column",
@@ -3482,6 +3484,11 @@ fn jumplist_picker(cx: &mut Context) {
 // FORK: changed-files picker.
 fn changed_file_picker(cx: &mut Context) {
     changed_file::changed_file_picker(cx);
+}
+
+// FORK: inline diff.
+fn toggle_inline_diff(cx: &mut Context) {
+    review::toggle_inline_diff(cx);
 }
 
 pub fn command_palette(cx: &mut Context) {
