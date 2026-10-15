@@ -14,6 +14,8 @@ mod git;
 
 mod diff;
 
+pub mod index; // FORK: diff review.
+
 pub use diff::{DiffHandle, Hunk};
 
 mod status;

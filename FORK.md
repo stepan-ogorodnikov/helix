@@ -63,24 +63,22 @@ Upstream base: `master` at `ba40e547`.
 
 ## diff-review
 
-- Status: active. Phases 1–3 done, phase 4 next. Plan: `fork/diff-review.md`.
-- Commits: `cb307282`, `0ce7825e`, `6dd4eb67`, `fc6be72c`.
-- Adds: `toggle_inline_diff`, `:diff-yank-base`, `:review`, `review_next_file`, `review_prev_file`, `review_next_hunk`, `review_prev_hunk`, and `start_review` (`Alt-r`) in the changed-files picker.
-  Phase 4 adds `:stage-hunk` and `:unstage-hunk`.
+- Status: active. Phases 1–4 done. Plan: `fork/diff-review.md`.
+- Commits: `cb307282`, `0ce7825e`, `6dd4eb67`, `fc6be72c`, `a33e133d`, and "Stage and unstage hunks through the index."
+- Adds: `toggle_inline_diff`, `:diff-yank-base`, `:review`, `review_next_file`, `review_prev_file`, `review_next_hunk`, `review_prev_hunk`, `:stage-hunk`, `:unstage-hunk`, and `start_review` (`Alt-r`) in the changed-files picker.
 - Upstream files: one-line seams, marked `// FORK:`. The plan's §7 lists them.
-  `helix-view/src/view.rs`, `helix-view/src/lib.rs`, `helix-view/src/annotations.rs`, `helix-term/src/ui/editor.rs`, `helix-term/src/ui/text_decorations.rs`, `helix-term/src/ui/picker.rs`, `helix-term/src/commands.rs`, `helix-term/src/commands/typed.rs`, `helix-term/Cargo.toml` (`imara-diff`), `helix-term/tests/integration.rs`, `book/src/themes.md`, `book/src/keymap.md`.
-  Phase 4 adds `helix-vcs/src/git.rs` and `helix-vcs/src/lib.rs`.
-- Fork-owned: `helix-view/src/annotations/diff.rs`, `helix-view/src/review.rs`, `helix-term/src/ui/text_decorations/diff.rs`, `helix-term/src/ui/text_decorations/diff/words.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/commands/typed/diff_yank_base.rs`, `helix-term/tests/test/fork_diff.rs`, `helix-term/tests/test/fork_diff/review.rs`.
-- Tests: unit tests in `annotations/diff.rs` and `diff/words.rs`. Integration tests in `fork_diff.rs` and `fork_diff/review.rs`.
-- Requires: from phase 4, staging runs the `git` binary and only works in a trusted workspace.
+  `helix-view/src/view.rs`, `helix-view/src/lib.rs`, `helix-view/src/annotations.rs`, `helix-vcs/src/git.rs`, `helix-vcs/src/lib.rs`, `helix-term/src/ui/editor.rs`, `helix-term/src/ui/text_decorations.rs`, `helix-term/src/ui/picker.rs`, `helix-term/src/commands.rs`, `helix-term/src/commands/typed.rs`, `helix-term/Cargo.toml` (`imara-diff`), `helix-term/tests/integration.rs`, `book/src/themes.md`, `book/src/keymap.md`.
+- Fork-owned: `helix-view/src/annotations/diff.rs`, `helix-view/src/review.rs`, `helix-vcs/src/index.rs`, `helix-vcs/src/git/index.rs`, `helix-term/src/ui/text_decorations/diff.rs`, `helix-term/src/ui/text_decorations/diff/words.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/commands/typed/diff_yank_base.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, `helix-term/tests/test/fork_diff.rs`, `helix-term/tests/test/fork_diff/review.rs`, `helix-term/tests/test/fork_diff/review/stage.rs`.
+- Tests: unit tests in `annotations/diff.rs`, `diff/words.rs`, `git/index.rs`, and `typed/stage_hunk.rs`. Integration tests in `fork_diff.rs`, `fork_diff/review.rs`, and `fork_diff/review/stage.rs`.
+- Requires: staging runs the `git` binary and only works in a trusted workspace.
   Upstream reads diffs with gix and never runs `git`.
 - Upstream refs: #15631 (side-by-side, open), #405, #9127 (inline diff, closed), #9951 and #16252 (diff base, open), #14434 (hunk picker, open).
 - Drop when: never as a whole. Upstream closed inline diff (#9127) as a variant of #405.
   If #15631 merges, rebase onto it and reconcile its theme scopes and `]g` changes.
-  If #9951 or #16252 merges, recheck the phase 4 seams in `helix-vcs`.
+  If #9951 or #16252 merges, recheck `helix-vcs/src/git/index.rs` against the new `open_repo` and diff-base code.
 - Rulings:
   - Removed rows go above the new lines.
-  - A review diffs against `HEAD` by default. `:review unstaged` uses the index.
+  - A review diffs against `HEAD` by default. `:review unstaged`, and the picker's unstaged list, use the index.
   - Staging writes the index with `git hash-object --path` and `git update-index`, not `git apply --cached`.
 
 ## fork-infra

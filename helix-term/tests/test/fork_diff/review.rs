@@ -15,6 +15,8 @@ use termina::event::{Event, KeyEvent};
 
 use super::*;
 
+mod stage;
+
 fn git(dir: &Path, args: &[&str]) {
     let output = Command::new("git")
         .arg("-C")

@@ -19,6 +19,8 @@ use ui::completers::{self, Completer};
 
 // FORK: :diff-yank-base
 mod diff_yank_base;
+// FORK: :stage-hunk and :unstage-hunk
+mod stage_hunk;
 // FORK: :yank-diagnostics
 mod yank_diagnostics;
 
@@ -4009,11 +4011,33 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
     TypableCommand {
         name: "review",
         aliases: &[],
-        doc: "Review the changed files of the current repository in path order: unstaged, staged, or all (the default). Each file diffs against HEAD.",
+        doc: "Review the changed files of the current repository in path order: unstaged, staged, or all (the default). An unstaged review diffs against the index, the others against HEAD.",
         fun: review::review,
         completer: CommandCompleter::positional(&[review::complete_list]),
         signature: Signature {
             positionals: (0, Some(1)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "stage-hunk",
+        aliases: &[],
+        doc: "Stage the changes under the selections, as the buffer has them. Runs git, so the workspace must be trusted.",
+        fun: stage_hunk::stage_hunk,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "unstage-hunk",
+        aliases: &[],
+        doc: "Unstage the staged changes on the lines under the selections. Runs git, so the workspace must be trusted.",
+        fun: stage_hunk::unstage_hunk,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
             ..Signature::DEFAULT
         },
     },

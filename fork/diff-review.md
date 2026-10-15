@@ -15,9 +15,9 @@ It's feasible. Most of the machinery is already in the tree.
   It's open, active, and archseer is test-driving it. Adopt it if it merges.
 - **Don't build a continuous multi-file buffer** (Zed-style multibuffer).
   It changes how a view relates to documents, and the existing prototype puts most of its code in hot files.
-- **Staging hunks** fits as a later phase.
-  It needs the index as a diff base, and upstream is rewriting exactly that plumbing right now.
-- **Size:** phases 1–3 came to about 1.3k fork-owned lines, against an estimate of 1.1–1.7k. About a dozen one-line seams.
+- **Staging hunks** came in phase 4, through the `git` binary.
+  It needs the index as a diff base, and upstream is rewriting exactly that plumbing right now, so the fork's VCS seams stay one line each.
+- **Size:** phases 1–4 came to about 1.8k fork-owned lines, against an estimate of 1.4–2.2k. About a dozen one-line seams.
   Most seams are in `view.rs` and `ui/editor.rs`, not in the hot files.
 
 ## 1. What Hunk is
@@ -210,21 +210,39 @@ Decided 2026-10-15: a review diffs against `HEAD` by default, staging is in scop
 - Read the index blob in a child module, `helix-vcs/src/git/index.rs`, and convert it to worktree text the way `get_diff_base` does.
   As a child it can call `git.rs`'s private `open_repo`, the same trick as `typed/yank_diagnostics.rs`.
 - That costs one line in each of `git.rs` and `lib.rs`, which matters while #9951 and #16252 are open:
-  - `mod index;` in `git.rs`.
-  - `#[cfg(feature = "git")] pub use git::index;` in `lib.rs`, because `mod git` is private and feature-gated.
-  - Callers in `helix-term` go behind `#[cfg(feature = "git")]` too.
+  - `pub(crate) mod index;` in `git.rs`.
+  - `pub mod index;` in `lib.rs`, for a facade in `helix-vcs/src/index.rs`. `mod git` is private and feature-gated.
 - `:stage-hunk` diffs the index text against the buffer and builds the file's new index text, with the hunks under the selection taken from the buffer.
   It pipes that to `git hash-object -w --stdin --path=<path>`, then runs `git update-index --cacheinfo <mode>,<oid>,<path>`.
   - `--path` applies the file's attributes on the way in, so CRLF conversion and clean filters come out right.
   - Not `git apply --cached`: it writes patch text to the index unconverted, and the base and the buffer are worktree text.
     In a scratch repo with `*.txt text eol=crlf`, a zero-context patch built from worktree text failed with "patch does not apply". The `hash-object` route stored LF.
-  - `:unstage-hunk` writes `HEAD`'s text back for the `HEAD`→index hunks that overlap, on the `HEAD` side, the hunks under the selection.
-    Staged hunks are only on screen in an `all` review, so that's where unstaging works.
+  - `:unstage-hunk` writes `HEAD`'s text back for the `HEAD`→index hunks on the `HEAD` lines under the selection.
   - In an `all` review, a staged hunk stays on screen, since it still differs from `HEAD`. The command reports what it staged.
   - Both refuse in an untrusted workspace (`is_trusted()`). Repo-local config like `core.fsmonitor` and clean filters can run programs.
 - A pure-gix version is possible later. gix 0.85 has `Pipeline::convert_to_git`, and gix-index can write the index.
   The cost is the fork writing `.git/index` itself: the lock, and extensions gix may not keep.
 - Upstream reads diffs with gix only and never needs the `git` binary. The `diff-review` entry in `FORK.md` records the requirement.
+
+Found in phase 4:
+
+- The plan put `helix-term`'s callers behind `#[cfg(feature = "git")]`.
+  The facade in `helix-vcs/src/index.rs` errors without the feature instead, like the diff providers, so `helix-term` has no `cfg`.
+- Both commands read the index and `HEAD` again and diff them against the buffer themselves.
+  So they don't depend on the view's base or wait for the diff worker.
+- `:unstage-hunk` maps the selections' lines to `HEAD` lines through the `HEAD`→buffer diff.
+  So it also finds staged hunks that aren't on screen, as in an `unstaged` review, and lines where the buffer went back to `HEAD`'s text.
+- Staging takes the buffer's text, unsaved edits included.
+- Staging all of a deleted file removes it from the index. Unstaging all of a file `HEAD` doesn't have removes it too.
+- `git` runs with the `--git-dir` and `--work-tree` gix found, and without `GIT_INDEX_FILE`, because gix reads `<git-dir>/index`.
+- Staging refuses a conflicted file. An `unstaged` review diffs a conflicted file against `HEAD`, since the index has no unconflicted version.
+- After staging, the base reloads only when the focused view reviews the file against the index.
+  A document that an earlier `unstaged` review left on the index base stays stale until the review opens it again.
+- The changed-files picker's `start_review` follows the list it shows, so the unstaged list (its default) reviews against the index.
+  Checked by hand in a pty, through `:diff-yank-base` on the first hunk: the unstaged list yanked the index text, the `all` list `HEAD`'s.
+- A new file is staged executable when it is executable on disk, unless `core.fileMode` is off.
+  The staged text keeps the index version's byte order mark.
+- Each command runs `git` twice on the main thread. In a large repository `update-index` rewrites the whole index, which can take a moment.
 
 ### 5.4 Agent notes (optional, zero Helix code)
 
@@ -248,7 +266,7 @@ Decided 2026-10-15: a review diffs against `HEAD` by default, staging is in scop
 | Watch mode | None. Base refresh on session navigation only | Partial |
 | Pager / difftool | `git diff \| hx` | Exists |
 | Edit while reviewing | Real buffer | Done (phase 1) |
-| Stage / unstage hunk | `git hash-object --path` + `git update-index` | Phase 4 |
+| Stage / unstage hunk | `:stage-hunk`, `:unstage-hunk` through `git hash-object --path` + `git update-index` | Done (phase 4) |
 | jj / Sapling | Gix only. jj colocated repos work through git | Upstream #12022 |
 
 ## 7. Fork fit: seams and new files
@@ -271,8 +289,8 @@ Seams (one line each, marked `// FORK:`):
 | `book/src/keymap.md` | 5 | `start_review` in the picker table |
 | `helix-term/tests/integration.rs` | 1 | `mod fork_diff;` in the `mod test` block. Review tests are a child module of `fork_diff.rs`. |
 | `helix-view/src/editor.rs` | 16 | Only for a config field or statusline variant. Phase 1 needs none. |
-| `helix-vcs/src/git.rs` | 3, under rewrite in open PRs | Phase 4: `mod index;` |
-| `helix-vcs/src/lib.rs` | 1, under rewrite in open PRs | Phase 4: `pub use git::index;` behind `cfg(feature = "git")` |
+| `helix-vcs/src/git.rs` | 3, under rewrite in open PRs | `pub(crate) mod index;` |
+| `helix-vcs/src/lib.rs` | 1, under rewrite in open PRs | `pub mod index;` |
 
 New fork-owned files:
 
@@ -283,8 +301,9 @@ New fork-owned files:
 - `helix-term/src/commands/review.rs`: toggle, `:review`, the review session, and file and hunk navigation.
 - `helix-term/src/commands/typed/{diff_yank_base,stage_hunk}.rs`
 - `helix-vcs/src/git/index.rs`: index base and the staging shell-out.
+- `helix-vcs/src/index.rs`: the facade over `git/index.rs`, which errors without the `git` feature.
 - `helix-term/tests/test/fork_diff.rs`: integration tests. Assert editor state: selection after `review_next_file`, register contents after `:diff-yank-base`, index contents after staging.
-  `fork_diff/review.rs` runs review sessions over a temporary git repository.
+  `fork_diff/review.rs` runs review sessions over a temporary git repository, and its child `fork_diff/review/stage.rs` stages in one.
 
 Avoid `helix-view/src/document.rs`.
 It has 16 upstream commits in the last year, as many as `editor.rs`, and it isn't on the `AGENTS.md` hot list.
@@ -297,7 +316,7 @@ The public `set_diff_base` and `diff_handle` are enough.
 | 1. Inline MVP | Done | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600. Actual: about 410, plus 300 of tests. | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
 | 2. Polish | Done | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600. Actual: about 540, plus 430 of tests. | Medium: caching the base `Syntax` and wrap math |
 | 3. Review session | Done | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500. Actual: about 380, plus 420 of tests. | Low |
-| 4. Index base + staging | Next | `git/index.rs`, index base for `:review unstaged`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
+| 4. Index base + staging | Done | `git/index.rs`, index base for `:review unstaged`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500. Actual: about 500, plus 360 of tests. | Medium: upstream diff-base rewrite, `git` dependency |
 | — Side-by-side | Waiting on #15631 | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
 
 For scale: #15631's core file alone is 2038 lines.

@@ -146,11 +146,7 @@ pub(super) fn changed_file_picker(cx: &mut Context) {
         },
     )
     .with_preview(|_editor, meta| Some((meta.path().into(), None)))
-    .with_status_label(ChangeView::Unstaged.label())
-    .with_on_start_review(|cx, changes, cursor| {
-        let files = changes.into_iter().cloned().collect();
-        super::review::start_review(cx.editor, files, cursor);
-    });
+    .with_status_label(ChangeView::Unstaged.label());
 
     let lists = Arc::new(Mutex::new(Lists {
         unstaged: Vec::new(),
@@ -160,8 +156,14 @@ pub(super) fn changed_file_picker(cx: &mut Context) {
         injector: Some(picker.injector()),
     }));
     let lists_for_cycle = Arc::clone(&lists);
+    let lists_for_review = Arc::clone(&lists);
     let lists_for_scan = Arc::clone(&lists);
     let finish_scan = FinishScan(lists);
+    let picker = picker.with_on_start_review(move |cx, changes, cursor| {
+        let files = changes.into_iter().cloned().collect();
+        let base = super::review::base_for(lists_for_review.lock().unwrap().mode);
+        super::review::start_review(cx.editor, files, cursor, base);
+    });
     let picker = picker.with_on_cycle_changes(move |picker| {
         let mut lists = lists_for_cycle.lock().unwrap();
         lists.mode = lists.mode.cycle();

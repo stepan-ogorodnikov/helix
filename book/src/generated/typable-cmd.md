@@ -89,7 +89,9 @@
 | `:run-shell-command`, `:sh`, `:!` | Run a shell command |
 | `:reset-diff-change`, `:diffget`, `:diffg` | Reset the diff change at the cursor position. |
 | `:diff-yank-base` | Yank the diff base text of the changes under the selections to a register, or the default yank register. |
-| `:review` | Review the changed files of the current repository in path order: unstaged, staged, or all (the default). Each file diffs against HEAD. |
+| `:review` | Review the changed files of the current repository in path order: unstaged, staged, or all (the default). An unstaged review diffs against the index, the others against HEAD. |
+| `:stage-hunk` | Stage the changes under the selections, as the buffer has them. Runs git, so the workspace must be trusted. |
+| `:unstage-hunk` | Unstage the staged changes on the lines under the selections. Runs git, so the workspace must be trusted. |
 | `:clear-register` | Clear given register. If no argument is provided, clear all registers. |
 | `:set-register` | Set contents of the given register. |
 | `:redraw` | Clear and re-render the whole UI |
