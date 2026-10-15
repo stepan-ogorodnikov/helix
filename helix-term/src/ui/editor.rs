@@ -145,6 +145,10 @@ impl EditorView {
 
         Self::doc_diagnostics_highlights_into(doc, theme, &mut overlays);
 
+        // FORK: inline diff. Changed words go under the selection overlays.
+        let inline_diff = text_decorations::InlineDiff::new(editor, doc, view);
+        overlays.extend(inline_diff.word_highlights());
+
         if is_focused {
             if config.lsp.auto_document_highlight {
                 if let Some(overlay) = Self::doc_document_highlights(doc, view, theme) {
@@ -206,7 +210,7 @@ impl EditorView {
             config.end_of_line_diagnostics,
         ));
         // FORK: inline diff. Added after inline diagnostics, the same order as the annotations.
-        decorations.add_decoration(text_decorations::InlineDiff::new(doc, view, theme));
+        decorations.add_decoration(inline_diff);
         render_document(
             surface,
             inner,

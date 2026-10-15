@@ -173,7 +173,7 @@ pub struct View {
     // each their own handler.
     pub diagnostics_handler: DiagnosticsHandler,
     // FORK: inline diff, toggled per view.
-    pub inline_diff: bool,
+    pub inline_diff: crate::annotations::diff::InlineDiffState,
 }
 
 impl fmt::Debug for View {
@@ -199,7 +199,7 @@ impl View {
             gutters,
             doc_revisions: HashMap::new(),
             diagnostics_handler: DiagnosticsHandler::new(),
-            inline_diff: false, // FORK: inline diff.
+            inline_diff: Default::default(), // FORK: inline diff.
         }
     }
 

@@ -17,6 +17,8 @@ use helix_view::expansion;
 use serde_json::Value;
 use ui::completers::{self, Completer};
 
+// FORK: :diff-yank-base
+mod diff_yank_base;
 // FORK: :yank-diagnostics
 mod yank_diagnostics;
 
@@ -3989,6 +3991,17 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
         completer: CommandCompleter::none(),
         signature: Signature {
             positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    TypableCommand {
+        name: "diff-yank-base",
+        aliases: &[],
+        doc: "Yank the diff base text of the changes under the selections to a register, or the default yank register.",
+        fun: diff_yank_base::diff_yank_base,
+        completer: CommandCompleter::all(completers::register),
+        signature: Signature {
+            positionals: (0, Some(1)),
             ..Signature::DEFAULT
         },
     },

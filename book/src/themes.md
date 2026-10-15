@@ -283,12 +283,13 @@ See also [#2380]
     - `view` - added lines in the inline diff (`toggle_inline_diff`)
   - `minus` - deletions
     - `gutter` - gutter indicator
-    - `view` - removed lines in the inline diff, falls back to `diff.minus`
+    - `view` - removed lines in the inline diff, falls back to `diff.minus`. Syntax colors show when it sets no foreground.
   - `delta` - modifications
     - `moved` - renamed or moved files/changes
     - `conflict` - merge conflicts
     - `gutter` - gutter indicator
     - `view` - modified lines in the inline diff
+      - `text` - changed words inside them, on both sides
 
 - `embedded` - Interpolated expressions embedded in a string template (`${…}`)
 

@@ -99,9 +99,14 @@ How it works:
 - A `Decoration` (new `helix-term/src/ui/text_decorations/diff.rs`) does the painting:
   - Removed rows from the base `Rope`, with old line numbers in the gutter columns.
   - `decorate_line` tints added and modified lines.
-- Phase 2 adds:
-  - Word-level highlights: an `imara_diff` token diff per hunk, as an overlay layer.
-  - Syntax highlighting of removed rows: parse the base once per base change and cache the `Syntax`.
+- Phase 2 added:
+  - Soft wrap. A removed line wraps like a document line, with the wrap indicator.
+    The annotation sizes rows in `insert_virtual_lines`, so only lines a traversal reaches get formatted.
+    The decoration reserves the same `row_height` and draws through a `DocumentFormatter`.
+  - Word-level highlights: an `imara_diff` Myers diff over word tokens, per modified hunk in view (`text_decorations/diff/words.rs`).
+    The document side is an overlay layer, pushed before the selection overlays. The decoration paints the removed side with its rows.
+  - Syntax highlighting of removed rows. The base is parsed on the blocking pool and cached on the view (`InlineDiffState`) until the base or the language changes.
+    The finished parse requests a redraw. Until then, rows have no syntax colors.
 - Don't keep a `Diff` inside the annotation. A `Diff` holds a `parking_lot` read lock on the diff.
   - `render_view` keeps the annotations alive from `ui/editor.rs:94` to `:213`, and the gutter takes a second read lock at `:172` (`gutter.rs:103`).
   - If the diff worker asks for its write lock in between (`diff/worker.rs:73`), the fair lock makes the gutter's read wait behind the writer.
@@ -112,6 +117,9 @@ How it works:
 - Theme scopes, from #15631: `diff.{plus,minus,delta}.view`, `diff.delta.view.text`.
   - Removed rows use `theme.get("diff.minus.view")`.
     It falls back to `diff.minus`, a text color in 140 of 218 bundled themes, which suits removed text.
+  - Syntax colors go under the removed style, so they only show when `diff.minus.view` sets no foreground (a background tint, as #15631 proposes).
+    With the fallback text color, removed rows stay one color, and the base isn't parsed.
+  - Changed words use `diff.delta.view.text`, an exact lookup like the tints, on both sides.
   - Tints use `try_get_exact` and skip a line when the scope is unset.
     A fallback lookup lands on `diff.delta`'s text color and paints over syntax colors.
   - No bundled theme defines the `.view` scopes yet.
@@ -135,6 +143,22 @@ Found in phase 1:
 - Removed lines after a last line with no trailing newline show no rows, because rows only follow a line ending.
 - The annotation and the decoration each copy the diff.
   If the diff lands between the two copies, that frame is off, and the redraw the diff worker requests fixes it.
+
+Found in phase 2:
+
+- Changed words on the document side can't come from the decoration.
+  A decoration is called by char index, and an inlay hint has the same char index as the real char after it.
+  So the char behind a parameter hint would lose its highlight.
+  The overlay cost a second seam in `render_view`: the `InlineDiff` is built before the overlays, and its overlay is pushed after the diagnostics.
+- The base parse is cached on the view, so `View::inline_diff` became an `InlineDiffState`. Two views of one file parse its base twice.
+- A `Rope` has no identity to compare.
+  So each frame that needs syntax compares the cached base with the diff's, one pass over the base. The pass is cheap next to the frame, even for a large file.
+- Word diffs are recomputed each frame, for the modified hunks that can be in view. Hunks over 16 KiB get none.
+  There's no similarity cut-off, so a rewritten line has every word marked.
+- `:diff-yank-base` yanks to the default yank register, like `y`, or to the register you name.
+  `:yank-diagnostic` defaults to the clipboard instead.
+  It picks hunks the way `:reset-diff-change` does, so a cursor on the line just after a hunk picks that hunk too.
+- `imara-diff` is now a direct `helix-term` dependency. Bump it together with helix-core's.
 
 ### 5.2 Review session (phase 3)
 
@@ -180,8 +204,8 @@ Found in phase 1:
 | Stack (unified) layout | Inline overlay | Done (phase 1) |
 | Split layout | #15631 | Upstream |
 | Multi-file stream + sidebar | Review session + changed-files picker | Phase 3 (not one continuous scroll) |
-| Syntax highlighting | New side: already there. Removed rows: base parse | Phase 2 |
-| Word-level highlight (not listed for Hunk) | Token diff overlay | Phase 2 |
+| Syntax highlighting | New side: already there. Removed rows: base parse | Done (phase 2) |
+| Word-level highlight (not listed for Hunk) | Token diff overlay | Done (phase 2) |
 | Agent notes inline | Notes LSP → diagnostics | Optional |
 | Watch mode | None. Base refresh on session navigation only | Partial |
 | Pager / difftool | `git diff \| hx` | Exists |
@@ -195,12 +219,13 @@ Seams (one line each, marked `// FORK:`):
 
 | File | Commits in last year | Seam |
 | --- | --- | --- |
-| `helix-view/src/view.rs` | 3 | Field `inline_diff: bool` on `View` and its default in `View::new`. One call in `text_annotations`. |
-| `helix-term/src/ui/editor.rs` | 9 | One `add_decoration` call in `render_view`. |
+| `helix-view/src/view.rs` | 3 | Field `inline_diff: InlineDiffState` on `View` and its default in `View::new`. One call in `text_annotations`. |
+| `helix-term/src/ui/editor.rs` | 9 | In `render_view`: build `InlineDiff` and push its word overlay before the selection overlays, then one `add_decoration` call. |
 | `helix-term/src/commands.rs` | 39 | Static command rows plus one-line wrappers, as `changed_file_picker` does. |
-| `helix-term/src/commands/typed.rs` | 20 | `TYPABLE_COMMAND_LIST` rows. Bodies in `typed/<name>.rs`. |
+| `helix-term/src/commands/typed.rs` | 20 | `TYPABLE_COMMAND_LIST` rows, and a `mod` line for each body in `typed/<name>.rs`. |
+| `helix-term/Cargo.toml` | 28 | `imara-diff`, after `parking_lot.workspace`, which version bumps don't touch |
 | `helix-view/src/annotations.rs`, `helix-term/src/ui/text_decorations.rs` | 1 | `mod diff;`, plus a re-export in `text_decorations.rs` |
-| `book/src/themes.md` | 8 | `view` under `diff.{plus,minus,delta}` |
+| `book/src/themes.md` | 8 | `view` under `diff.{plus,minus,delta}`, `text` under `diff.delta.view` |
 | `helix-term/src/commands/changed_file.rs` | fork-owned | "Start review" picker key |
 | `helix-term/tests/integration.rs` | 1 | `mod fork_diff;` in the `mod test` block |
 | `helix-view/src/editor.rs` | 16 | Only for a config field or statusline variant. Phase 1 needs none. |
@@ -211,6 +236,7 @@ New fork-owned files:
 
 - `helix-view/src/annotations/diff.rs`: hunk → virtual-row mapping. Pure functions, unit-tested.
 - `helix-term/src/ui/text_decorations/diff.rs`: painting removed rows, tints, word highlights.
+- `helix-term/src/ui/text_decorations/diff/words.rs`: the word diff of a hunk. Pure, unit-tested.
 - `helix-term/src/commands/review.rs`: toggle, the review session, and file and hunk navigation.
 - `helix-term/src/commands/typed/{review,diff_yank_base,stage_hunk}.rs`
 - `helix-vcs/src/git/index.rs`: index base and the staging shell-out.
@@ -225,8 +251,8 @@ The public `set_diff_base` and `diff_handle` are enough.
 | Phase | Status | Scope | Fork-owned lines (rough) | Risk |
 | --- | --- | --- | --- | --- |
 | 1. Inline MVP | Done | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600. Actual: about 410, plus 300 of tests. | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
-| 2. Polish | Next | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600 | Medium: caching the base `Syntax` and wrap math |
-| 3. Review session | Planned | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500 | Low |
+| 2. Polish | Done | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600. Actual: about 540, plus 430 of tests. | Medium: caching the base `Syntax` and wrap math |
+| 3. Review session | Next | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500 | Low |
 | 4. Index base + staging | Planned | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
 | — Side-by-side | Waiting on #15631 | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
 
@@ -245,6 +271,8 @@ These gate phases 3–4, not phase 1:
 
 - `helix-view/src/document.rs` churns like `editor.rs` (16/yr). Consider adding it to the `AGENTS.md` hot-file list.
 - After a commit, gutters stay stale until `:reload-all`. Phase 3's base refresh fixes that for files under review. A general fix would be a seam in `document.rs`. Skip it.
+- `TextRenderer::draw_decoration_grapheme` checks the row against the viewport height before subtracting the vertical offset.
+  When the view starts partway into a wrapped line, inline diagnostics near the bottom seem to be dropped. Phase 2 draws its rows without it.
 
 ## Sources
 
