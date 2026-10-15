@@ -174,6 +174,8 @@ pub struct View {
     pub diagnostics_handler: DiagnosticsHandler,
     // FORK: inline diff, toggled per view.
     pub inline_diff: crate::annotations::diff::InlineDiffState,
+    // FORK: diff review, started per view.
+    pub review: Option<crate::review::ReviewSession>,
 }
 
 impl fmt::Debug for View {
@@ -200,6 +202,7 @@ impl View {
             doc_revisions: HashMap::new(),
             diagnostics_handler: DiagnosticsHandler::new(),
             inline_diff: Default::default(), // FORK: inline diff.
+            review: None,                    // FORK: diff review.
         }
     }
 

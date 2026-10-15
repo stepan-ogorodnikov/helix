@@ -4005,6 +4005,18 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
+    // FORK: diff review. The body is in commands/review.rs.
+    TypableCommand {
+        name: "review",
+        aliases: &[],
+        doc: "Review the changed files of the current repository in path order: unstaged, staged, or all (the default). Each file diffs against HEAD.",
+        fun: review::review,
+        completer: CommandCompleter::positional(&[review::complete_list]),
+        signature: Signature {
+            positionals: (0, Some(1)),
+            ..Signature::DEFAULT
+        },
+    },
     TypableCommand {
         name: "clear-register",
         aliases: &[],

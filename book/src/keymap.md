@@ -468,6 +468,7 @@ Keys to use within picker. Override them in `[keys.picker]`. A binding of `nop` 
 See the documentation page on [pickers](./pickers.md) for more info.
 
 The changed-file picker opens on unstaged changes. `cycle_changes` switches that list to staged changes, then to both. The current list is named before the match count. Other pickers pass that key through to the prompt.
+`start_review` starts a review of the files the changed-file picker shows, in the order shown, at the selected file. See `:review`.
 
 ```toml
 [keys.picker]
@@ -490,6 +491,7 @@ C-j = "next"
 | `Ctrl-t`                    | `toggle_preview`   | Toggle preview                                             |
 | `Escape`, `Ctrl-c`          | `close`            | Close picker                                               |
 | `Ctrl-g`                    | `cycle_changes`    | Cycle the changed-file list: unstaged, staged, all         |
+| `Alt-r`                     | `start_review`     | Review the shown changed files from the selected one       |
 
 ## Prompt
 

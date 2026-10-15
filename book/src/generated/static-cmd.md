@@ -156,6 +156,10 @@
 | `goto_first_change` | Goto first change | normal: `` [G ``, select: `` [G `` |
 | `goto_last_change` | Goto last change | normal: `` ]G ``, select: `` ]G `` |
 | `toggle_inline_diff` | Toggle inline diff in the current view |  |
+| `review_next_file` | Goto next file in the review |  |
+| `review_prev_file` | Goto previous file in the review |  |
+| `review_next_hunk` | Goto next change in the review |  |
+| `review_prev_hunk` | Goto previous change in the review |  |
 | `goto_line_start` | Goto line start | normal: `` gh ``, `` <home> ``, select: `` gh ``, insert: `` <home> `` |
 | `goto_line_end` | Goto line end | normal: `` gl ``, `` <end> ``, select: `` gl `` |
 | `goto_column` | Goto column | normal: `` g\| `` |

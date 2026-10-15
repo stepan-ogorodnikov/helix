@@ -146,7 +146,11 @@ pub(super) fn changed_file_picker(cx: &mut Context) {
         },
     )
     .with_preview(|_editor, meta| Some((meta.path().into(), None)))
-    .with_status_label(ChangeView::Unstaged.label());
+    .with_status_label(ChangeView::Unstaged.label())
+    .with_on_start_review(|cx, changes, cursor| {
+        let files = changes.into_iter().cloned().collect();
+        super::review::start_review(cx.editor, files, cursor);
+    });
 
     let lists = Arc::new(Mutex::new(Lists {
         unstaged: Vec::new(),

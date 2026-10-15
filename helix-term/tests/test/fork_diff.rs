@@ -12,6 +12,8 @@ use tui::buffer::Buffer;
 
 use super::*;
 
+mod review;
+
 const TEXT: &str = "#[l|]#ine one\nline two\nline three\n";
 const BASE: &str = "line one\nold two\nline three\n";
 

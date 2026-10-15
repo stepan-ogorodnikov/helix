@@ -17,7 +17,7 @@ It's feasible. Most of the machinery is already in the tree.
   It changes how a view relates to documents, and the existing prototype puts most of its code in hot files.
 - **Staging hunks** fits as a later phase.
   It needs the index as a diff base, and upstream is rewriting exactly that plumbing right now.
-- **Size:** roughly 1.1–1.7k fork-owned lines for phases 1–3. About a dozen one-line seams.
+- **Size:** phases 1–3 came to about 1.3k fork-owned lines, against an estimate of 1.1–1.7k. About a dozen one-line seams.
   Most seams are in `view.rs` and `ui/editor.rs`, not in the hot files.
 
 ## 1. What Hunk is
@@ -162,15 +162,41 @@ Found in phase 2:
 
 ### 5.2 Review session (phase 3)
 
-- `:review [unstaged|staged|all]` builds an ordered file list from the fork's status walk (`for_each_changed_file`).
-  It opens the first file with inline diff on.
-  The changed-files picker gets a key to start a review from its current list.
-- `review_next_file` / `review_prev_file`.
-  `review_next_hunk` / `review_prev_hunk` cross into the next file at the last hunk.
-  Users bind them in config (for example over `]g`/`[g`). `goto_next_change` stays untouched, so there's no seam in its body.
-- Refresh the diff base (`Document::set_diff_base`) at session start and on each file switch, since the base only loads on open and reload.
+- `:review [unstaged|staged|all]` lists the changes of the repository that holds the current file, or of the working directory for a buffer with no path.
+  `all` is the default.
+  - The list comes from the fork's status walk (`for_each_changed_file`) in the background. A job callback starts the session when the walk ends.
+  - Files go in path order. The first one opens with inline diff on, at its first hunk.
+- In the changed-files picker, `start_review` (`Alt-r`) reviews the files the picker shows, in the order shown, from the selected one.
+  A query narrows the review.
+- `review_next_file` / `review_prev_file` open the neighboring file at its first hunk. A count skips files.
+- `review_next_hunk` / `review_prev_hunk` step like `]g`/`[g`.
+  Past the last hunk of the review's current file, they open the next file at its first hunk. Before the first hunk, they open the previous file at its last hunk.
+  - They only cross files from the file the review is on. Anywhere else they stay in the file, like `]g`.
+    So binding them over `]g`/`[g` changes nothing outside a review.
+  - `goto_next_change` stays untouched, so there's no seam in its body.
+- Each file switch refreshes the diff base (`Document::set_diff_base`) from `HEAD`, since the base only loads on open and reload.
+  A commit during a review no longer leaves stale hunks.
+- Every file diffs against `HEAD`. The list only picks files, so `unstaged` still shows a file's staged hunks. The index base is phase 4.
+- A file with no `HEAD` version, like a new or untracked one, gets an empty base, so its text is one added hunk.
+  A deleted file opens as an empty buffer, with its old text as removed rows. A renamed file diffs against its old path.
+- Each switch says `Review 3/12: path`, plus `(new)`, `(deleted)`, `(conflict)`, or `(renamed from …)` when the text doesn't show it.
+  There's no statusline element. One would cost a `StatusLineElement` variant in `editor.rs`.
 - A sidebar is a picker in Helix, not a pane. The changed-files picker with preview plays that role. A persistent panel is out of scope.
-- Optional: a statusline element ("review 3/12"). That's one enum variant plus one match arm.
+
+Found in phase 3:
+
+- The session lives on the view, like the inline diff toggle. That costs a field in `view.rs` and no seam in `editor.rs`. A split starts without a session.
+  The type is in a new `helix-view/src/review.rs`, which costs `pub mod review;` in `helix-view/src/lib.rs`.
+- The diff worker runs in the background, and a base update waits out its 96 ms debounce. So a file switch can't land on a hunk from the worker.
+  `open_file` diffs the file itself with the worker's settings (Histogram, the indent heuristic, the size limits) to pick the hunk.
+  Steps within a file use the worker's hunks, like `]g`. Right after a switch that changed the base, they can lag by that debounce.
+- The session keeps an index, like a quickfix list. Opening another file doesn't move it, and `review_next_file` continues from the index.
+  A file that fails to open still takes the index, so the next step moves past it.
+- Hunk steps use the primary selection and leave one selection. Unlike `]g`, they don't extend in select mode.
+- `:review` walks the current file's repository, but the changed-files picker walks the working directory. They differ only when the current file is in another repository.
+  Integration tests can't change the working directory, so the picker key has no end-to-end test. It was checked by hand in a pty.
+- `:review` is in `commands/review.rs` next to the session, not in `typed/review.rs`. It calls no `typed.rs` helper, so `typed.rs` only needs its row.
+- In the test harness, `event_loop_until_idle` clears the idle timer when it returns. A later run that gets no events never returns, so the tests' wait helper re-arms the timer.
 
 ### 5.3 Diff base and staging (phase 4)
 
@@ -200,10 +226,10 @@ Found in phase 2:
 
 | Hunk | Helix-native equivalent | Status |
 | --- | --- | --- |
-| `[` `]` hunks | `[g` `]g`, plus cross-file `review_*_hunk` | Exists / phase 3 |
+| `[` `]` hunks | `[g` `]g`, plus cross-file `review_*_hunk` | Exists / Done (phase 3) |
 | Stack (unified) layout | Inline overlay | Done (phase 1) |
 | Split layout | #15631 | Upstream |
-| Multi-file stream + sidebar | Review session + changed-files picker | Phase 3 (not one continuous scroll) |
+| Multi-file stream + sidebar | Review session + changed-files picker | Done (phase 3), not one continuous scroll |
 | Syntax highlighting | New side: already there. Removed rows: base parse | Done (phase 2) |
 | Word-level highlight (not listed for Hunk) | Token diff overlay | Done (phase 2) |
 | Agent notes inline | Notes LSP → diagnostics | Optional |
@@ -219,15 +245,19 @@ Seams (one line each, marked `// FORK:`):
 
 | File | Commits in last year | Seam |
 | --- | --- | --- |
-| `helix-view/src/view.rs` | 3 | Field `inline_diff: InlineDiffState` on `View` and its default in `View::new`. One call in `text_annotations`. |
+| `helix-view/src/view.rs` | 3 | Fields `inline_diff: InlineDiffState` and `review: Option<ReviewSession>` on `View`, and their defaults in `View::new`. One call in `text_annotations`. |
+| `helix-view/src/lib.rs` | 3 | `pub mod review;` |
 | `helix-term/src/ui/editor.rs` | 9 | In `render_view`: build `InlineDiff` and push its word overlay before the selection overlays, then one `add_decoration` call. |
 | `helix-term/src/commands.rs` | 39 | Static command rows plus one-line wrappers, as `changed_file_picker` does. |
-| `helix-term/src/commands/typed.rs` | 20 | `TYPABLE_COMMAND_LIST` rows, and a `mod` line for each body in `typed/<name>.rs`. |
+| `helix-term/src/commands/typed.rs` | 20 | `TYPABLE_COMMAND_LIST` rows, and a `mod` line for each body in `typed/<name>.rs`. `:review`'s row points into `commands/review.rs`, so it has no `mod` line. |
 | `helix-term/Cargo.toml` | 28 | `imara-diff`, after `parking_lot.workspace`, which version bumps don't touch |
 | `helix-view/src/annotations.rs`, `helix-term/src/ui/text_decorations.rs` | 1 | `mod diff;`, plus a re-export in `text_decorations.rs` |
 | `book/src/themes.md` | 8 | `view` under `diff.{plus,minus,delta}`, `text` under `diff.delta.view` |
-| `helix-term/src/commands/changed_file.rs` | fork-owned | "Start review" picker key |
-| `helix-term/tests/integration.rs` | 1 | `mod fork_diff;` in the `mod test` block |
+| `helix-term/src/commands/changed_file.rs` | fork-owned | The `with_on_start_review` call |
+| `helix-term/src/ui/picker.rs` | 3 | The `on_start_review` hook and its key arm, next to the fork's `on_cycle_changes` |
+| `helix-view/src/editor/picker_keys.rs` | fork-owned | `StartReview`, bound to `Alt-r` |
+| `book/src/keymap.md` | 5 | `start_review` in the picker table |
+| `helix-term/tests/integration.rs` | 1 | `mod fork_diff;` in the `mod test` block. Review tests are a child module of `fork_diff.rs`. |
 | `helix-view/src/editor.rs` | 16 | Only for a config field or statusline variant. Phase 1 needs none. |
 | `helix-vcs/src/git.rs` | 3, under rewrite in open PRs | Phase 4: `mod index;` |
 | `helix-vcs/src/lib.rs` | 1, under rewrite in open PRs | Phase 4: `pub use git::index;` behind `cfg(feature = "git")` |
@@ -237,10 +267,12 @@ New fork-owned files:
 - `helix-view/src/annotations/diff.rs`: hunk → virtual-row mapping. Pure functions, unit-tested.
 - `helix-term/src/ui/text_decorations/diff.rs`: painting removed rows, tints, word highlights.
 - `helix-term/src/ui/text_decorations/diff/words.rs`: the word diff of a hunk. Pure, unit-tested.
-- `helix-term/src/commands/review.rs`: toggle, the review session, and file and hunk navigation.
-- `helix-term/src/commands/typed/{review,diff_yank_base,stage_hunk}.rs`
+- `helix-view/src/review.rs`: the review session a view holds.
+- `helix-term/src/commands/review.rs`: toggle, `:review`, the review session, and file and hunk navigation.
+- `helix-term/src/commands/typed/{diff_yank_base,stage_hunk}.rs`
 - `helix-vcs/src/git/index.rs`: index base and the staging shell-out.
 - `helix-term/tests/test/fork_diff.rs`: integration tests. Assert editor state: selection after `review_next_file`, register contents after `:diff-yank-base`, index contents after staging.
+  `fork_diff/review.rs` runs review sessions over a temporary git repository.
 
 Avoid `helix-view/src/document.rs`.
 It has 16 upstream commits in the last year, as many as `editor.rs`, and it isn't on the `AGENTS.md` hot list.
@@ -252,8 +284,8 @@ The public `set_diff_base` and `diff_handle` are enough.
 | --- | --- | --- | --- | --- |
 | 1. Inline MVP | Done | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600. Actual: about 410, plus 300 of tests. | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
 | 2. Polish | Done | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600. Actual: about 540, plus 430 of tests. | Medium: caching the base `Syntax` and wrap math |
-| 3. Review session | Next | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500 | Low |
-| 4. Index base + staging | Planned | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
+| 3. Review session | Done | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500. Actual: about 380, plus 420 of tests. | Low |
+| 4. Index base + staging | Next | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
 | — Side-by-side | Waiting on #15631 | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
 
 For scale: #15631's core file alone is 2038 lines.
@@ -262,15 +294,17 @@ For scale: #15631's core file alone is 2038 lines.
 
 Decided: removed rows go above the new lines.
 
-These gate phases 3–4, not phase 1:
+These gate phase 4:
 
 - Default base for a review: `HEAD` (everything an agent did since the last commit) or the index (only what isn't staged)? `HEAD` matches today's gutter, so it's simpler.
+  Phase 3 diffs against `HEAD`, and `:review` lists `all` by default to match.
 - Is staging in scope, and is a `git` binary dependency acceptable for it?
 
 ## Side findings
 
 - `helix-view/src/document.rs` churns like `editor.rs` (16/yr). Consider adding it to the `AGENTS.md` hot-file list.
 - After a commit, gutters stay stale until `:reload-all`. Phase 3's base refresh fixes that for files under review. A general fix would be a seam in `document.rs`. Skip it.
+- Clippy's `type_complexity` flags the fork's `on_cycle_changes` field in `ui/picker.rs`. Phase 3 gave its own hook a type alias. The older field still warns.
 - `TextRenderer::draw_decoration_grapheme` checks the row against the viewport height before subtracting the vertical offset.
   When the view starts partway into a wrapped line, inline diagnostics near the bottom seem to be dropped. Phase 2 draws its rows without it.
 

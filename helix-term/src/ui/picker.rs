@@ -267,6 +267,10 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     /// Handles [`PickerCommand::CycleChanges`]. Absent on pickers that do not
     /// have a change list, which then pass the key to the prompt.
     on_cycle_changes: Option<Box<dyn Fn(&mut Self)>>,
+    /// Handles [`PickerCommand::StartReview`] with the shown items, in order, and
+    /// the index of the selected one. Absent on pickers that do not list changed
+    /// files, which then pass the key to the prompt.
+    on_start_review: Option<StartReviewCallback<T>>,
 
     pub truncate_start: bool,
     /// Caches paths to documents
@@ -397,6 +401,7 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
             default_action: Action::Replace,
             status_label: None,
             on_cycle_changes: None,
+            on_start_review: None,
             completion_height: 0,
             widths,
             preview_cache: HashMap::new(),
@@ -545,6 +550,14 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
 
     pub fn with_on_cycle_changes(mut self, cycle: impl Fn(&mut Self) + 'static) -> Self {
         self.on_cycle_changes = Some(Box::new(cycle));
+        self
+    }
+
+    pub fn with_on_start_review(
+        mut self,
+        start: impl Fn(&mut Context, Vec<&T>, usize) + 'static,
+    ) -> Self {
+        self.on_start_review = Some(Box::new(start));
         self
     }
 
@@ -1210,6 +1223,15 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
                     self.prompt_handle_event(event, ctx);
                 }
             }
+            Some(PickerCommand::StartReview) => {
+                if let Some(start) = &self.on_start_review {
+                    let snapshot = self.matcher.snapshot();
+                    let items = snapshot.matched_items(..).map(|item| item.data).collect();
+                    start(ctx, items, self.cursor as usize);
+                    return close_fn(self);
+                }
+                self.prompt_handle_event(event, ctx);
+            }
             // `nop` and unbound keys edit the query.
             Some(PickerCommand::Nop) | None => {
                 self.prompt_handle_event(event, ctx);
@@ -1255,3 +1277,4 @@ impl<T: 'static + Send + Sync, D> Drop for Picker<T, D> {
 }
 
 type PickerCallback<T> = Box<dyn Fn(&mut Context, &T, Action)>;
+type StartReviewCallback<T> = Box<dyn Fn(&mut Context, Vec<&T>, usize)>;

@@ -1,7 +1,7 @@
 mod changed_file;
 pub(crate) mod dap;
 pub(crate) mod lsp;
-mod review; // FORK: inline diff.
+mod review; // FORK: diff review.
 pub(crate) mod syntax;
 pub(crate) mod typed;
 
@@ -460,6 +460,10 @@ impl MappableCommand {
         goto_first_change, "Goto first change",
         goto_last_change, "Goto last change",
         toggle_inline_diff, "Toggle inline diff in the current view",
+        review_next_file, "Goto next file in the review",
+        review_prev_file, "Goto previous file in the review",
+        review_next_hunk, "Goto next change in the review",
+        review_prev_hunk, "Goto previous change in the review",
         goto_line_start, "Goto line start",
         goto_line_end, "Goto line end",
         goto_column, "Goto column",
@@ -3489,6 +3493,26 @@ fn changed_file_picker(cx: &mut Context) {
 // FORK: inline diff.
 fn toggle_inline_diff(cx: &mut Context) {
     review::toggle_inline_diff(cx);
+}
+
+// FORK: diff review.
+fn review_next_file(cx: &mut Context) {
+    review::next_file(cx);
+}
+
+// FORK: diff review.
+fn review_prev_file(cx: &mut Context) {
+    review::prev_file(cx);
+}
+
+// FORK: diff review.
+fn review_next_hunk(cx: &mut Context) {
+    review::next_hunk(cx);
+}
+
+// FORK: diff review.
+fn review_prev_hunk(cx: &mut Context) {
+    review::prev_hunk(cx);
 }
 
 pub fn command_palette(cx: &mut Context) {
