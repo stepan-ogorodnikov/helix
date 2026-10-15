@@ -20,6 +20,10 @@ A config field stays on the upstream struct. Move the table to a sibling module 
 
 Move tests with the body. Remove imports the hot file no longer uses.
 
+## Ledger
+
+`FORK.md` lists every fork feature: what it touches upstream, and when to drop it. Update a feature's entry in the same commit as the feature.
+
 ## Plans
 
 A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the code. Each phase's commit marks the phase done in the plan and records what the work found. `fork/diff-review.md` is the example.
