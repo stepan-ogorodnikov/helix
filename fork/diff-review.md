@@ -200,19 +200,31 @@ Found in phase 3:
 
 ### 5.3 Diff base and staging (phase 4)
 
-- Reviewing only unstaged changes, and staging at all, needs the index as the base.
-- Read the index blob in a child module, `helix-vcs/src/git/index.rs`.
+Decided 2026-10-15: a review diffs against `HEAD` by default, staging is in scope, and it runs the `git` binary.
+
+- `:review` keeps `all` and `HEAD` as its default, which matches the gutter in every other file.
+- `:review unstaged` diffs against the index, so it shows only what isn't staged. Each file switch loads the scope's base.
+  - With nothing staged, the index and `HEAD` give the same hunks.
+  - The base belongs to the document, not the view. An `unstaged` review changes the file's gutter in every view, until a reload or a switch back to `HEAD`.
+- `:review staged` stays a file filter over the `HEAD` diff. A buffer holds worktree text, so the `HEAD`→index diff can't be drawn on it.
+- Read the index blob in a child module, `helix-vcs/src/git/index.rs`, and convert it to worktree text the way `get_diff_base` does.
   As a child it can call `git.rs`'s private `open_repo`, the same trick as `typed/yank_diagnostics.rs`.
 - That costs one line in each of `git.rs` and `lib.rs`, which matters while #9951 and #16252 are open:
   - `mod index;` in `git.rs`.
   - `#[cfg(feature = "git")] pub use git::index;` in `lib.rs`, because `mod git` is private and feature-gated.
   - Callers in `helix-term` go behind `#[cfg(feature = "git")]` too.
-- Stage a hunk by building a zero-context patch and running `git apply --cached --unidiff-zero`. Unstage with `-R` against `HEAD`→index.
-  - Shelling out gets filters, CRLF, and index locking right for free.
-  - Gate it on workspace trust: repo-local config like `core.fsmonitor` can run programs.
-  - A pure-gix version (write the blob, update the index entry) is possible later, but you'd have to reimplement clean filters.
-- Upstream reads diffs with gix only and never needs the `git` binary. That's a fork-only dependency, so record it in the patch ledger.
-  The fork has no patch ledger yet. Create one before phase 4.
+- `:stage-hunk` diffs the index text against the buffer and builds the file's new index text, with the hunks under the selection taken from the buffer.
+  It pipes that to `git hash-object -w --stdin --path=<path>`, then runs `git update-index --cacheinfo <mode>,<oid>,<path>`.
+  - `--path` applies the file's attributes on the way in, so CRLF conversion and clean filters come out right.
+  - Not `git apply --cached`: it writes patch text to the index unconverted, and the base and the buffer are worktree text.
+    In a scratch repo with `*.txt text eol=crlf`, a zero-context patch built from worktree text failed with "patch does not apply". The `hash-object` route stored LF.
+  - `:unstage-hunk` writes `HEAD`'s text back for the `HEAD`→index hunks that overlap, on the `HEAD` side, the hunks under the selection.
+    Staged hunks are only on screen in an `all` review, so that's where unstaging works.
+  - In an `all` review, a staged hunk stays on screen, since it still differs from `HEAD`. The command reports what it staged.
+  - Both refuse in an untrusted workspace (`is_trusted()`). Repo-local config like `core.fsmonitor` and clean filters can run programs.
+- A pure-gix version is possible later. gix 0.85 has `Pipeline::convert_to_git`, and gix-index can write the index.
+  The cost is the fork writing `.git/index` itself: the lock, and extensions gix may not keep.
+- Upstream reads diffs with gix only and never needs the `git` binary. The `diff-review` entry in `FORK.md` records the requirement.
 
 ### 5.4 Agent notes (optional, zero Helix code)
 
@@ -236,7 +248,7 @@ Found in phase 3:
 | Watch mode | None. Base refresh on session navigation only | Partial |
 | Pager / difftool | `git diff \| hx` | Exists |
 | Edit while reviewing | Real buffer | Done (phase 1) |
-| Stage / unstage hunk | `git apply --cached` | Phase 4 |
+| Stage / unstage hunk | `git hash-object --path` + `git update-index` | Phase 4 |
 | jj / Sapling | Gix only. jj colocated repos work through git | Upstream #12022 |
 
 ## 7. Fork fit: seams and new files
@@ -285,20 +297,17 @@ The public `set_diff_base` and `diff_handle` are enough.
 | 1. Inline MVP | Done | Per-view toggle. Removed rows above the new lines, truncated, no syntax. Tints where the theme defines `.view` scopes. Gutter markers on removed rows. | 400–600. Actual: about 410, plus 300 of tests. | Low. Row math is the only tricky part, and it's unit-testable. Copy out of the diff lock (5.1). |
 | 2. Polish | Done | Soft-wrap heights, word-level highlights, base syntax highlights, `:diff-yank-base` | 400–600. Actual: about 540, plus 430 of tests. | Medium: caching the base `Syntax` and wrap math |
 | 3. Review session | Done | `:review`, file and cross-file hunk navigation, picker entry, base refresh | 300–500. Actual: about 380, plus 420 of tests. | Low |
-| 4. Index base + staging | Next | `git/index.rs`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
+| 4. Index base + staging | Next | `git/index.rs`, index base for `:review unstaged`, `:stage-hunk`, `:unstage-hunk`, trust gate | 300–500 | Medium: upstream diff-base rewrite, `git` dependency |
 | — Side-by-side | Waiting on #15631 | Rebase onto #15631 once merged | 0 | Its theme scopes and `]g` changes may need reconciling with phase 1 |
 
 For scale: #15631's core file alone is 2038 lines.
 
-## 9. Open questions for you
+## 9. Decisions
 
-Decided: removed rows go above the new lines.
-
-These gate phase 4:
-
-- Default base for a review: `HEAD` (everything an agent did since the last commit) or the index (only what isn't staged)? `HEAD` matches today's gutter, so it's simpler.
-  Phase 3 diffs against `HEAD`, and `:review` lists `all` by default to match.
-- Is staging in scope, and is a `git` binary dependency acceptable for it?
+- Removed rows go above the new lines.
+- A review diffs against `HEAD` by default, the same as the gutter. `:review unstaged` uses the index. (2026-10-15)
+- Staging is in scope. It runs the `git` binary and only works in a trusted workspace. (2026-10-15)
+- The patch ledger lives in `FORK.md`. (2026-10-15)
 
 ## Side findings
 
