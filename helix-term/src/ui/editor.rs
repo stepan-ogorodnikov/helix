@@ -130,6 +130,8 @@ impl EditorView {
             inner.height,
             &text_annotations,
         ));
+        // FORK: review-stream
+        text_decorations::review::render(editor, doc, theme, &mut decorations, &mut overlays);
 
         if doc
             .language_config()

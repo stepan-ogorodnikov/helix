@@ -19,6 +19,7 @@ pub(crate) mod gutter;
 pub mod layout;
 mod reconcile;
 mod sync;
+mod words;
 
 pub use sync::sync;
 
@@ -126,6 +127,67 @@ pub struct Stream {
     selections: HashMap<ViewId, Selection>,
     /// Digits of the widest base and source line numbers.
     widths: [usize; 2],
+    pub ranges: Ranges,
+}
+
+/// The rows of each hunk: a run of removed and added rows.
+fn hunks(rows: &[Row]) -> Vec<Range<usize>> {
+    let mut hunks: Vec<Range<usize>> = Vec::new();
+    for (row, kind) in rows.iter().enumerate() {
+        if !matches!(kind, Row::Removed { .. } | Row::Added { .. }) {
+            continue;
+        }
+        match hunks.last_mut() {
+            Some(hunk) if hunk.end == row => hunk.end += 1,
+            _ => hunks.push(row..row + 1),
+        }
+    }
+    hunks
+}
+
+/// Char ranges of the stream's text, by how they're drawn. Each list is in
+/// order, and leaves out line endings.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Ranges {
+    pub removed: Vec<Range<usize>>,
+    pub headers: Vec<Range<usize>>,
+    pub gaps: Vec<Range<usize>>,
+    /// The words that changed, on both sides of a hunk with removed and added
+    /// rows.
+    pub words: Vec<Range<usize>>,
+}
+
+impl Ranges {
+    fn new(rows: &[Row], hunks: &[Range<usize>], text: &Rope) -> Ranges {
+        let mut ranges = Ranges::default();
+        for (row, kind) in rows.iter().enumerate() {
+            let list = match kind {
+                Row::Removed { .. } => &mut ranges.removed,
+                Row::Header { .. } => &mut ranges.headers,
+                Row::Gap { .. } => &mut ranges.gaps,
+                Row::Context { .. } | Row::Added { .. } => continue,
+            };
+            let line = text.line(row);
+            let ending = get_line_ending(&line).map_or(0, |ending| ending.len_chars());
+            let start = text.line_to_char(row);
+            list.push(start..start + line.len_chars() - ending);
+        }
+        let text = text.slice(..);
+        for hunk in hunks {
+            let added = hunk.start
+                + rows[hunk.clone()]
+                    .iter()
+                    .take_while(|row| matches!(row, Row::Removed { .. }))
+                    .count();
+            if let Some(words) =
+                words::changed_words(text, hunk.start..added, text, added..hunk.end)
+            {
+                ranges.words.extend(words.base);
+                ranges.words.extend(words.doc);
+            }
+        }
+        ranges
+    }
 }
 
 /// A file of the stream, and what its rows came from.
@@ -161,17 +223,7 @@ pub struct Target<'a> {
 
 impl Stream {
     pub fn hunks(&self) -> Vec<Range<usize>> {
-        let mut hunks: Vec<Range<usize>> = Vec::new();
-        for (row, kind) in self.rows.iter().enumerate() {
-            if !matches!(kind, Row::Removed { .. } | Row::Added { .. }) {
-                continue;
-            }
-            match hunks.last_mut() {
-                Some(hunk) if hunk.end == row => hunk.end += 1,
-                _ => hunks.push(row..row + 1),
-            }
-        }
-        hunks
+        hunks(&self.rows)
     }
 
     pub fn headers(&self) -> impl Iterator<Item = usize> + '_ {
@@ -341,6 +393,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, sections: Vec<Section>) {
         version: doc.version(),
         selections: HashMap::new(),
         widths: [1, 1],
+        ranges: Ranges::default(),
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
     let view = editor.tree.get(editor.tree.focus);
@@ -446,6 +499,7 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
     debug_assert_eq!(*doc.text(), text);
     let version = doc.version();
     let stream = editor.review.stream.as_mut().expect("checked above");
+    stream.ranges = Ranges::new(&layout.rows, &hunks(&layout.rows), &text);
     stream.files = files;
     stream.rows = layout.rows;
     stream.text = text;
@@ -533,6 +587,7 @@ mod tests {
             version: 0,
             selections: HashMap::new(),
             widths: layout.widths,
+            ranges: Ranges::default(),
         }
     }
 
@@ -546,6 +601,28 @@ mod tests {
         ]);
         assert_eq!(stream.hunks(), [1..3, 10..12, 13..15]);
         assert_eq!(stream.headers().collect::<Vec<_>>(), [0, 12]);
+    }
+
+    #[test]
+    fn ranges_cover_rows_without_their_line_endings_and_the_changed_words() {
+        let shown = layout(&files(vec![modified(
+            "a.txt",
+            "x = 1\r\nkeep\n",
+            "x = 2\r\nkeep\n",
+        )]));
+        let text = Rope::from(shown.text.as_str());
+        let ranges = Ranges::new(&shown.rows, &hunks(&shown.rows), &text);
+        let texts = |ranges: &[Range<usize>]| -> Vec<String> {
+            ranges
+                .iter()
+                .map(|range| text.slice(range.clone()).to_string())
+                .collect()
+        };
+        assert_eq!(text, "a.txt  modified\nx = 1\r\nx = 2\r\nkeep\n");
+        assert_eq!(texts(&ranges.headers), ["a.txt  modified"]);
+        assert_eq!(texts(&ranges.removed), ["x = 1"]);
+        assert!(ranges.gaps.is_empty());
+        assert_eq!(texts(&ranges.words), ["1", "2"]);
     }
 
     #[test]

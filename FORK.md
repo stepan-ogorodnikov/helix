@@ -98,25 +98,27 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active, phases 1–3 of `fork/review-stream.md`.
+- Status: active, phases 1–4 of `fork/review-stream.md`.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one read-only buffer, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit in it is put back. `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.
+  Removed and added rows get tints, headers a rule, and changed words a mark, from theme scopes: `diff.{plus,minus}.view`, `diff.delta.view.text`, and the fork's `ui.review.header` and `ui.review.gap`.
 - Upstream files:
   - `helix-view/src/editor.rs`: the `Editor::review` field, its default, and one condition in `Editor::switch` that keeps the stream when you switch away from it.
   - `helix-view/src/gutter.rs`: the stream's branch at the top of `line_numbers` and `diff`.
   - `helix-view/src/lib.rs`: `pub mod review;`.
   - `helix-view/Cargo.toml`: `imara-diff`. Bump it together with helix-core's and helix-vcs's.
-  - `helix-term/src/ui/editor.rs`: the `review_keys` field and its default, the keymap swap at the top of `handle_event`, and `review::sync` at the top of `render`.
+  - `helix-term/src/ui/editor.rs`: the `review_keys` field and its default, the keymap swap at the top of `handle_event`, `review::sync` at the top of `render`, and the review's decoration and overlays in `render_view`.
+  - `helix-term/src/ui/text_decorations.rs`: `pub mod review;`.
   - `helix-term/src/commands.rs`: `mod review;`, the `review_*` rows, and their wrappers.
   - `helix-term/src/commands/typed.rs`: the `:review` and `:review-refresh` rows.
   - `helix-term/src/keymap.rs`: `pub mod review;`.
   - `helix-term/tests/integration.rs`: `mod fork_review;`.
-  - `book/src/keymap.md` (Review), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
-- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,gutter,sync}.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/keymap/review.rs`, `helix-term/tests/test/fork_review.rs`.
-- Tests: unit tests in `review.rs`, `review/layout.rs`, and `review/reconcile.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
+  - `book/src/keymap.md` (Review), `book/src/themes.md` (the review's scopes), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
+- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,gutter,sync,words}.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-term/tests/test/fork_review.rs`.
+- Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, and `review/words.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
 - Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
 - Drop when: upstream ships a multi-file diff view in one buffer.
 - Rulings:

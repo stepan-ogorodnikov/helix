@@ -280,12 +280,16 @@ See also [#2380]
 - `diff` - version control changes
   - `plus` - additions
     - `gutter` - gutter indicator
+    - `view` - background of an added row in the [review](./keymap.md#review)
   - `minus` - deletions
     - `gutter` - gutter indicator
+    - `view` - background of a removed row in the review. Its text falls back to `diff.minus`
   - `delta` - modifications
     - `moved` - renamed or moved files/changes
     - `conflict` - merge conflicts
     - `gutter` - gutter indicator
+    - `view`
+      - `text` - changed words in the review
 
 - `embedded` - Interpolated expressions embedded in a string template (`${…}`)
 
@@ -339,7 +343,9 @@ These scopes are used for theming the editor interface:
 | `ui.picker.header`                | Header row area in pickers with multiple columns                                               |
 | `ui.picker.header.column`         | Column names in pickers with multiple columns                                                  |
 | `ui.picker.header.column.active`  | The column name in pickers with multiple columns where the cursor is entering into.            |
-| `ui.window`                       | Borderlines separating splits                                                                  |
+| `ui.window`                       | Borderlines separating splits, and the rule after a file's header in the review                |
+| `ui.review.header`                | A file's header row in the [review](./keymap.md#review). Falls back to `markup.heading`         |
+| `ui.review.gap`                   | A row of unchanged lines left out of the review. Falls back to `comment`                       |
 | `ui.help`                         | Description box for commands                                                                   |
 | `ui.text`                         | Default text style, command prompts, popup text, etc.                                          |
 | `ui.text.focus`                   | The currently selected line in the picker                                                      |

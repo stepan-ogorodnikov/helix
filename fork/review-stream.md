@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 3 done 2026-10-17. Phases 4–6 follow without a stop, as the human asked.
+Status: phase 4 done 2026-10-17. Phases 5–6 follow without a stop, as the human asked.
 
 ## Bottom line
 
@@ -326,7 +326,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 1. Read-only stream | Done | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200. Actual: about 820, plus 580 of tests. | Medium: render seams, row math, the guard |
 | 2. Keep it current | Done | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500. Actual: about 400, plus 310 of tests. | **High**: the cursor while rows appear and vanish |
 | 3. Navigation | Done | Hunk and file motions across files | 150–300. Actual: about 180, plus 90 of tests. | Low |
-| 4. Look | Planned | Row tints, header and gap decorations, word highlights | 200–400 | Low |
+| 4. Look | Done | Row tints, header and gap decorations, word highlights | 200–400. Actual: about 300, of it 130 ported, plus 100 of tests. | Low |
 | 5. Syntax | Planned | Highlights from full parses on both sides | 400–600 | Medium: mapping highlight layers |
 | 6. Staging | Planned | Index base, `unstaged`/`staged` reviews, stage and unstage, `:review-restore`, `:review-context`, picker jump | 500–800, about 600 of it ported | Low: ported code |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
@@ -399,6 +399,22 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - `]F` puts the cursor on the next header. `[F` from inside a file goes to that file's own header first, as `[[` does in vim.
 - The stream keymap walks the user's keymap and swaps `goto_{next,prev,first,last}_change` for the review's versions, in sequences too. A custom key for them carries over, and the infobox shows the review's descriptions.
 - A hunk is a run of removed and added rows. A header always separates two files' hunks, so hunks never span files.
+
+### 6.5 Phase 4: found
+
+- One seam in `render_view`, right after the syntax overlay: it adds one decoration and up to four overlays.
+  The overlays go under diagnostics and the selection. The decoration comes after the cursorline, so a tinted row hides it, as in diff review.
+- Row text is colored by overlays, not the decoration. A decoration runs before the text is drawn, so the text's own style would paint over its foreground.
+- The scopes:
+  - Tints are exact lookups of `diff.plus.view` and `diff.minus.view`. `diff.plus` and `diff.minus` are text colors in most themes.
+  - Removed text uses `diff.minus.view`, falling back to `diff.minus`, so bundled themes show removed rows in their removal color.
+  - Changed words use `diff.delta.view.text`, exactly, as diff review did. No bundled theme has it yet, so bundled themes show no changed words.
+  - Headers use the new `ui.review.header`, falling back to `markup.heading`, and gaps the new `ui.review.gap`, falling back to `comment`.
+  - The rule after a header uses `ui.window`, the split border.
+- The rule is drawn before the text, from one column past the header's width, so the text never covers it. It's skipped on a header's wrapped lines.
+- The style ranges and changed words are worked out once per update and kept on the stream, not per frame.
+  `words.rs` came over from `archive/diff-review` without the clamp for a lagging diff, since rows never lag.
+- Nothing here has an integration test. The tests can't see what's drawn. The ranges and the word diff have unit tests, and the rest is for the manual check.
 
 ## 7. Risks
 
