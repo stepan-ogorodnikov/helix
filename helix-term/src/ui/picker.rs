@@ -241,6 +241,8 @@ impl<T, D> Column<T, D> {
 type DynQueryCallback<T, D> =
     fn(&str, &mut Editor, Arc<D>, &Injector<T, D>) -> BoxFuture<'static, anyhow::Result<()>>;
 
+type CycleChangesCallback<T, D> = Box<dyn Fn(&mut Picker<T, D>)>;
+
 pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     columns: Arc<[Column<T, D>]>,
     primary_column: usize,
@@ -266,7 +268,7 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     status_label: Option<Cow<'static, str>>,
     /// Handles [`PickerCommand::CycleChanges`]. Absent on pickers that do not
     /// have a change list, which then pass the key to the prompt.
-    on_cycle_changes: Option<Box<dyn Fn(&mut Self)>>,
+    on_cycle_changes: Option<CycleChangesCallback<T, D>>,
 
     pub truncate_start: bool,
     /// Caches paths to documents
