@@ -8,12 +8,15 @@
 //! - `diff.delta.view.text` marks changed words. It has no fallback.
 //! - `ui.review.header` falls back to `markup.heading`, and `ui.review.gap` to
 //!   `comment`. The rule after a header uses `ui.window`.
+//!
+//! Syntax colors come first, from parses of each file's two sides, so these
+//! styles patch over them.
 
 use helix_core::syntax::{Highlight, OverlayHighlights};
 use helix_core::unicode::width::UnicodeWidthStr;
 use helix_view::graphics::Rect;
-use helix_view::review::Row;
-use helix_view::{Document, Editor, Theme};
+use helix_view::review::{self, Row};
+use helix_view::{Document, Editor, Theme, View};
 
 use crate::ui::document::{LinePos, TextRenderer};
 use crate::ui::text_decorations::DecorationManager;
@@ -21,6 +24,7 @@ use crate::ui::text_decorations::DecorationManager;
 pub fn render<'a>(
     editor: &'a Editor,
     doc: &'a Document,
+    view: &View,
     theme: &Theme,
     decorations: &mut DecorationManager<'a>,
     overlays: &mut Vec<OverlayHighlights>,
@@ -28,6 +32,21 @@ pub fn render<'a>(
     let Some(stream) = editor.review.stream_of(doc.id()) else {
         return;
     };
+    // WHY: syntax colors on removed rows show only when `diff.minus.view` sets
+    // no text color. Most themes fall back to `diff.minus`, a text color.
+    let base = theme
+        .try_get("diff.minus.view")
+        .is_none_or(|style| style.fg.is_none());
+    let text = doc.text();
+    let first = text.char_to_line(doc.view_offset(view.id).anchor.min(text.len_chars()));
+    let height = view.inner_area(doc).height as usize;
+    overlays.extend(review::syntax_overlays(
+        editor,
+        stream,
+        first..first + height,
+        base,
+    ));
+
     let ranges = &stream.ranges;
     let either = |scope: &str, fallback: &str| {
         theme
@@ -58,7 +77,6 @@ pub fn render<'a>(
     let added = theme.try_get_exact("diff.plus.view");
     let removed = theme.try_get_exact("diff.minus.view");
     let rule = theme.get("ui.window");
-    let text = doc.text();
     decorations.add_decoration(move |renderer: &mut TextRenderer, pos: LinePos| {
         let viewport = renderer.viewport;
         let row = Rect::new(viewport.x, pos.visual_line, viewport.width, 1);

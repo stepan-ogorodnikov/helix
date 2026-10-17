@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 4 done 2026-10-17. Phases 5–6 follow without a stop, as the human asked.
+Status: phase 5 done 2026-10-17. Phase 6 follows without a stop, as the human asked.
 
 ## Bottom line
 
@@ -327,7 +327,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 2. Keep it current | Done | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500. Actual: about 400, plus 310 of tests. | **High**: the cursor while rows appear and vanish |
 | 3. Navigation | Done | Hunk and file motions across files | 150–300. Actual: about 180, plus 90 of tests. | Low |
 | 4. Look | Done | Row tints, header and gap decorations, word highlights | 200–400. Actual: about 300, of it 130 ported, plus 100 of tests. | Low |
-| 5. Syntax | Planned | Highlights from full parses on both sides | 400–600 | Medium: mapping highlight layers |
+| 5. Syntax | Done | Highlights from full parses on both sides | 400–600. Actual: about 270, plus 80 of tests. | Medium: mapping highlight layers |
 | 6. Staging | Planned | Index base, `unstaged`/`staged` reviews, stage and unstage, `:review-restore`, `:review-context`, picker jump | 500–800, about 600 of it ported | Low: ported code |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
 | 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
@@ -415,6 +415,22 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - The style ranges and changed words are worked out once per update and kept on the stream, not per frame.
   `words.rs` came over from `archive/diff-review` without the clamp for a lagging diff, since rows never lag.
 - Nothing here has an integration test. The tests can't see what's drawn. The ranges and the word diff have unit tests, and the rest is for the manual check.
+
+### 6.6 Phase 5: found
+
+- No seam turns the document highlighter off. The stream has no language, so it never had one.
+- Syntax colors are overlays, one per nesting depth. An overlay holds one highlight per range, and a nested scope like a string inside a call needs both.
+  The layers go in outermost first, so they patch in the order the highlighter's stack would.
+- One highlighter runs per run of rows that show consecutive lines of one side of a file, over just those lines of the whole parse.
+  Its char ranges map onto the stream by line, since a row holds its line's chars one to one.
+- Each side of a file keeps its parse in the file, behind a lock the background parse fills. A finished parse requests a redraw.
+  `update` hands a side's parse to the new file when that side's text is unchanged, so following an edit reparses only the side that moved, and `:review-refresh` reparses nothing that's the same.
+- A source whose buffer is open and current lends the buffer's tree, which updates as you type, so it isn't parsed twice.
+- Only the rows that can be in view get highlights. Nothing is parsed until a file's rows first show.
+- As in diff review, removed rows get syntax colors only when `diff.minus.view` sets no text color. In most themes it falls back to `diff.minus`, a text color, and the base is never parsed.
+- The language comes from the file's name, then a shebang in its source.
+- The test parses Rust in place, through the bundled grammars, with no runtime.
+  The buffer-tree path and the background parse have no test of their own. The integration tests can't see colors.
 
 ## 7. Risks
 

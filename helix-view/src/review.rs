@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use helix_core::Language;
 use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
 use helix_vcs::FileChange;
 
@@ -19,9 +20,11 @@ pub(crate) mod gutter;
 pub mod layout;
 mod reconcile;
 mod sync;
+mod syntax;
 mod words;
 
 pub use sync::sync;
+pub use syntax::overlays as syntax_overlays;
 
 /// What a line of the stream shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,6 +202,8 @@ struct File {
     seen: Option<(DocumentId, i32)>,
     /// Source lines whose gap was opened.
     opened: Vec<Range<usize>>,
+    language: Option<Language>,
+    trees: syntax::Trees,
 }
 
 impl From<Section> for File {
@@ -208,6 +213,8 @@ impl From<Section> for File {
             content: section.content,
             seen: None,
             opened: Vec::new(),
+            language: None,
+            trees: syntax::Trees::default(),
         }
     }
 }
@@ -433,11 +440,18 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
     let Some(view) = shown_in else {
         return;
     };
+    let loader = editor.syn_loader.load();
     for file in &mut files {
         file.seen = editor
             .document_by_path(file.change.path())
             .map(|doc| (doc.id(), doc.version()));
+        if let Content::Text { source, .. } = &file.content {
+            file.language = loader
+                .language_for_filename(file.change.path())
+                .or_else(|| loader.language_for_shebang(source.slice(..)));
+        }
     }
+    drop(loader);
 
     let Some(stream) = editor.review.stream.as_ref() else {
         return;
@@ -464,9 +478,18 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
                 layout::line_map(old_base, base),
                 layout::line_map(old_source, source),
             ),
-            _ => (None, None),
+            // INVARIANT: never a side kept as unchanged. A binary file has no
+            // parses to keep.
+            _ => (Some(Vec::new()), Some(Vec::new())),
         };
         files[new].opened = layout::map_ranges(&old.opened, source.as_deref());
+        // WHY: a side whose text didn't change keeps its parse.
+        if base.is_none() {
+            files[new].trees.base = old.trees.base.clone();
+        }
+        if source.is_none() {
+            files[new].trees.source = old.trees.source.clone();
+        }
         maps.push(Some((new, base, source)));
     }
     if let Some((file, lines)) = open {
@@ -576,14 +599,17 @@ mod tests {
     }
 
     fn stream(sections: Vec<Section>) -> Stream {
-        let files = files(sections);
+        stream_of(files(sections))
+    }
+
+    pub(super) fn stream_of(files: Vec<File>) -> Stream {
         let layout = layout(&files);
         Stream {
             doc: DocumentId::default(),
             root: PathBuf::new(),
             files,
             rows: layout.rows,
-            text: Rope::from(layout.text),
+            text: Rope::from(layout.text.as_str()),
             version: 0,
             selections: HashMap::new(),
             widths: layout.widths,

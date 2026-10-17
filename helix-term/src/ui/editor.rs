@@ -131,7 +131,7 @@ impl EditorView {
             &text_annotations,
         ));
         // FORK: review-stream
-        text_decorations::review::render(editor, doc, theme, &mut decorations, &mut overlays);
+        text_decorations::review::render(editor, doc, view, theme, &mut decorations, &mut overlays);
 
         if doc
             .language_config()
