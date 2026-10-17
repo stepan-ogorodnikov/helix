@@ -16,6 +16,8 @@ A fork feature is opt-in or additive. Upstream defaults and config keep their me
 
 Never push to `helix-editor/helix`, and never open or comment on its pull requests and issues.
 
+Push `fork` only through `tools/fork/land.sh`, and only when the human asks. It checks the trailers, runs upstream's CI checks, and fast-forwards `origin/fork`. `tools/fork/land.sh --check` runs the same checks and pushes nothing.
+
 In a fork clone, `gh` picks the parent repository until `gh repo set-default stepan-ogorodnikov/helix` has run. Check `gh repo set-default --view` before using `gh`.
 
 ## Commits

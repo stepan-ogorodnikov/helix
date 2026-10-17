@@ -13,7 +13,7 @@ Upstream base: `master` at `ba40e547`.
 
 - `master` mirrors `upstream/master`. Nothing else commits to it.
 - `fork` is `master` plus the patches below. It's the branch to build.
-- `origin/fork` only fast-forwards, except when the stack moves onto a new upstream.
+- `origin/fork` only fast-forwards, through `tools/fork/land.sh`, except when the stack moves onto a new upstream.
 
 ## Setup
 
@@ -90,5 +90,5 @@ The hooks run on commit.
 
 - Status: active.
 - Plan: `fork/fork-infra.md`.
-- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `tools/fork/hooks/`. All fork-owned. Upstream has never had these paths.
+- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
 - Drop when: never.
