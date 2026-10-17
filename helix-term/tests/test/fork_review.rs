@@ -785,3 +785,117 @@ async fn a_new_file_can_be_staged_and_unstaged() -> anyhow::Result<()> {
     assert_eq!(index_text(&repo, "c.txt"), None);
     Ok(())
 }
+
+fn buffer_text(app: &Application, path: &Path) -> Option<String> {
+    app.editor
+        .document_by_path(path)
+        .map(|doc| doc.text().to_string())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_restore_puts_the_base_back_in_each_buffer() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("]G:review-restore<ret>"),
+                Some(&|app| {
+                    assert_eq!(status(app), "Restored 1 change");
+                    assert_eq!(
+                        buffer_text(app, &b).as_deref(),
+                        Some("b\n"),
+                        "a file that isn't open gets a buffer"
+                    );
+                    assert_eq!(
+                        std::fs::read_to_string(&b).unwrap(),
+                        "B\n",
+                        "and isn't saved"
+                    );
+                    assert!(!stream_text(app).contains("B\n"), "the review follows it");
+                }),
+            ),
+            (
+                Some("gg]g]g:review-restore<ret>"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &a).as_deref(),
+                        Some("1\ntwo\n3\n4\n5\n6\n7\n8\n9\n10\n"),
+                        "only the selected hunk"
+                    );
+                    assert!(app.editor.document_by_path(&a).unwrap().is_modified());
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_restore_leaves_the_index_to_unstage_hunk() -> anyhow::Result<()> {
+    let repo = staged_and_unstaged();
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    run_until(&mut app, ":review staged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("]g:review-restore<ret>"),
+        Some(&|app| {
+            assert_eq!(
+                status(app),
+                "'review-restore': A staged review shows the index, not a file. :unstage-hunk takes a hunk back out"
+            );
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_context_sets_the_lines_around_each_hunk() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some(":review-context 1<ret>"),
+                Some(&|app| {
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(
+                            &file,
+                            "⋯ 5 unchanged lines\n6\n7\nseven\n8\n⋯ 2 unchanged lines\n"
+                        )
+                    );
+                }),
+            ),
+            (
+                Some(":review-context<ret>"),
+                Some(&|app| assert_eq!(status(app), "The review shows 1 line of context")),
+            ),
+            (
+                Some(":review-context many<ret>"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        "'review-context': 'many' is not a number of lines"
+                    )
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}

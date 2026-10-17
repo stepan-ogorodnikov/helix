@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as _};
 use helix_core::command_line::Args;
 use helix_core::fuzzy::fuzzy_match;
 use helix_core::line_ending::line_end_char_index;
@@ -18,8 +18,10 @@ use helix_view::editor::Action;
 use helix_view::review::{self, Content, Row, Section, Stream};
 use helix_view::{align_view, current, current_ref, doc, view, Align, Editor};
 
+mod restore;
 mod stage;
 
+pub(super) use restore::review_restore;
 pub(super) use stage::{stage_hunk, unstage_hunk};
 
 use super::{push_jump, Context};
@@ -73,6 +75,31 @@ pub(super) fn review_refresh(
         let scope = open_stream(cx.editor).map_or(ChangeView::All, |stream| stream.scope);
         read_changes(cx, scope, None);
     }
+    Ok(())
+}
+
+pub(super) fn review_context(
+    cx: &mut compositor::Context,
+    args: Args,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event != PromptEvent::Validate {
+        return Ok(());
+    }
+    let context = open_stream(cx.editor)
+        .context("There is no review. Start one with :review")?
+        .context;
+    let Some(lines) = args.first() else {
+        let plural = if context == 1 { "" } else { "s" };
+        cx.editor.set_status(format!(
+            "The review shows {context} line{plural} of context"
+        ));
+        return Ok(());
+    };
+    let lines = lines
+        .parse()
+        .map_err(|_| anyhow!("'{lines}' is not a number of lines"))?;
+    review::set_context(cx.editor, lines);
     Ok(())
 }
 

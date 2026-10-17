@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 6b done 2026-10-17. Phases 6c–6d follow without a stop, as the human asked.
+Status: phase 6c done 2026-10-17. Phase 6d follows without a stop, as the human asked.
 
 ## Bottom line
 
@@ -330,7 +330,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 5. Syntax | Done | Highlights from full parses on both sides | 400–600. Actual: about 270, plus 80 of tests. | Medium: mapping highlight layers |
 | 6a. Scopes | Done | Index base, `:review unstaged` and `:review staged` | Actual: about 120, plus 300 ported, plus 100 of tests. | Low: ported code |
 | 6b. Staging | Done | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported. Actual: about 230, of it 130 ported, plus 150 of tests. | Low: ported code |
-| 6c. Restore and context | Planned | `:review-restore`, `:review-context` | 150–250 | Low |
+| 6c. Restore and context | Done | `:review-restore`, `:review-context` | 150–250. Actual: about 130, plus 110 of tests. | Low |
 | 6d. Picker key | Planned | A changed-files picker key that jumps into the review at the file's header | 50–100 | Low |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
 | 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
@@ -456,6 +456,13 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - Rows that refill an empty stream pushed the cursor past them, and `]g` then found nothing. A stream that was empty starts at the top again, like a new one.
 - Staging writes in the source's encoding, which `Section` now carries, and keeps the index version's byte order mark.
 - `run_until` in the tests names the status when it gives up. A wait for the index alone can pass before the review's read lands.
+
+### 6.9 Phase 6c: found
+
+- `:review-restore` picks hunks as staging does, with the same `under`, and diffs the base against the file's buffer, not the review's source, so it never restores text the buffer has moved past.
+  A file that isn't open gets a buffer in the background. Nothing is saved, and `u` in the file undoes the restore.
+- A staged review refuses it: its new side is the index, and `:unstage-hunk` already takes a hunk back out.
+- The context is a field of the stream. `:review-context` lays the files out again through `update`, so the cursor and opened gaps stay.
 
 ## 7. Risks
 

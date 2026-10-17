@@ -98,6 +98,8 @@
 | `:review` | Show the changes of every changed file in one read-only buffer, or switch to it. Scopes: all (HEAD against the files, the default), unstaged (the index against the files), staged (HEAD against the index) |
 | `:stage-hunk` | Stage the hunks the selections touch in the review |
 | `:unstage-hunk` | Unstage the hunks the selections touch in the review |
+| `:review-restore` | Put the base's text back over the hunks the selections touch in the review, in each file's buffer |
+| `:review-context` | Show the given number of unchanged lines around each hunk of the review, or say how many it shows |
 | `:review-refresh` | List the changed files again and read them from disk, keeping the review's place |
 | `:read`, `:r` | Load a file into buffer |
 | `:echo` | Prints the given arguments to the statusline. |

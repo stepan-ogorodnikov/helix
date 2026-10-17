@@ -184,7 +184,7 @@ fn changes(count: usize) -> String {
 
 /// Whether the hunk side `lines` touches one of `ranges`, first and last lines,
 /// or ends just above it. A removal has no lines, so it's under the line below.
-fn under(lines: &Range<u32>, ranges: &[(usize, usize)]) -> bool {
+pub(super) fn under(lines: &Range<u32>, ranges: &[(usize, usize)]) -> bool {
     ranges
         .iter()
         .any(|&(start, end)| lines.end as usize >= start && lines.start as usize <= end)

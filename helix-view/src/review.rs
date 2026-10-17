@@ -125,6 +125,8 @@ pub struct Stream {
     /// The changes it shows. A `Staged` stream's sources are the index, not
     /// the files, so it never follows a file's buffer.
     pub scope: ChangeView,
+    /// Unchanged lines shown around each hunk.
+    pub context: usize,
     files: Vec<File>,
     /// One per line of the buffer.
     pub rows: Vec<Row>,
@@ -230,6 +232,7 @@ impl From<Section> for File {
 /// The hunks a selection touches in one file.
 pub struct Picked<'a> {
     pub change: &'a FileChange,
+    pub base: &'a Rope,
     pub source: &'a Rope,
     pub encoding: &'static Encoding,
     /// Each hunk's source lines, first and last. A removal stands on the line
@@ -262,7 +265,7 @@ impl Stream {
                 continue;
             }
             let file = self.rows[hunk.start].file();
-            let Content::Text { source, .. } = &self.files[file].content else {
+            let Content::Text { base, source } = &self.files[file].content else {
                 continue;
             };
             let added: Vec<usize> = self.rows[hunk.clone()]
@@ -281,6 +284,7 @@ impl Stream {
                 Some(last) if std::ptr::eq(last.change, change) => last.lines.push(lines),
                 _ => picked.push(Picked {
                     change,
+                    base,
                     source,
                     encoding: self.files[file].encoding,
                     lines: vec![lines],
@@ -353,7 +357,7 @@ struct Layout {
     widths: [usize; 2],
 }
 
-fn layout(files: &[File]) -> Layout {
+fn layout(files: &[File], context: usize) -> Layout {
     let mut rows = Vec::new();
     let mut text = String::new();
     for (index, file) in files.iter().enumerate() {
@@ -364,7 +368,7 @@ fn layout(files: &[File]) -> Layout {
                 Some(hunks) if hunks.is_empty() => (Vec::new(), Some("no text changes")),
                 Some(hunks) => {
                     let lines = layout::line_count(source);
-                    let rows = layout::rows(index, &hunks, lines, layout::CONTEXT, &file.opened);
+                    let rows = layout::rows(index, &hunks, lines, context, &file.opened);
                     (rows, None)
                 }
             },
@@ -459,6 +463,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         doc: doc_id,
         root,
         scope,
+        context: layout::CONTEXT,
         files: Vec::new(),
         rows: Vec::new(),
         text: doc.text().clone(),
@@ -479,6 +484,15 @@ fn to_top(editor: &mut Editor, doc: DocumentId) {
         .expect("the stream's buffer is open");
     doc.set_selection(view.id, Selection::point(0));
     align_view(doc, view, Align::Top);
+}
+
+pub fn set_context(editor: &mut Editor, lines: usize) {
+    let Some(stream) = editor.review.stream.as_mut() else {
+        return;
+    };
+    stream.context = lines;
+    let files = stream.files.clone();
+    update(editor, files, None);
 }
 
 pub fn open_gap(editor: &mut Editor, row: usize) -> bool {
@@ -574,7 +588,7 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
         files[file].opened.push(lines);
     }
 
-    let layout = layout(&files);
+    let layout = layout(&files, stream.context);
     let old_keys: Vec<_> = stream
         .rows
         .iter()
@@ -630,21 +644,24 @@ mod tests {
 
     #[test]
     fn layout_text_has_one_line_per_row() {
-        let layout = layout(&files(vec![
-            modified(
-                "a.txt",
-                "1\n2\n3\n4\n5\n6\n7\n8\n9\n",
-                "1\n2\n3\n4\n5\nsix\n7\n8\n9\n",
-            ),
-            modified("b.txt", "x\r\ny", "x\r\nz"),
-            Section {
-                change: FileChange::Added {
-                    path: PathBuf::from("c.bin"),
+        let layout = layout(
+            &files(vec![
+                modified(
+                    "a.txt",
+                    "1\n2\n3\n4\n5\n6\n7\n8\n9\n",
+                    "1\n2\n3\n4\n5\nsix\n7\n8\n9\n",
+                ),
+                modified("b.txt", "x\r\ny", "x\r\nz"),
+                Section {
+                    change: FileChange::Added {
+                        path: PathBuf::from("c.bin"),
+                    },
+                    content: Content::Binary,
+                    encoding: helix_core::encoding::UTF_8,
                 },
-                content: Content::Binary,
-                encoding: helix_core::encoding::UTF_8,
-            },
-        ]));
+            ]),
+            layout::CONTEXT,
+        );
         assert_eq!(
             layout.text,
             "a.txt  modified\n\
@@ -667,10 +684,16 @@ mod tests {
                 n => format!("{n}\n"),
             })
             .collect();
-        let shown = layout(&files(vec![modified("a.txt", &base, &source)]));
+        let shown = layout(
+            &files(vec![modified("a.txt", &base, &source)]),
+            layout::CONTEXT,
+        );
         assert_eq!(shown.widths, [4, 3]);
 
-        let shown = layout(&files(vec![modified("a.txt", "", "new\n")]));
+        let shown = layout(
+            &files(vec![modified("a.txt", "", "new\n")]),
+            layout::CONTEXT,
+        );
         assert_eq!(shown.widths, [1, 1]);
     }
 
@@ -683,11 +706,12 @@ mod tests {
     }
 
     pub(super) fn stream_of(files: Vec<File>) -> Stream {
-        let layout = layout(&files);
+        let layout = layout(&files, layout::CONTEXT);
         Stream {
             doc: DocumentId::default(),
             root: PathBuf::new(),
             scope: ChangeView::All,
+            context: layout::CONTEXT,
             files,
             rows: layout.rows,
             text: Rope::from(layout.text.as_str()),
@@ -712,11 +736,14 @@ mod tests {
 
     #[test]
     fn ranges_cover_rows_without_their_line_endings_and_the_changed_words() {
-        let shown = layout(&files(vec![modified(
-            "a.txt",
-            "x = 1\r\nkeep\n",
-            "x = 2\r\nkeep\n",
-        )]));
+        let shown = layout(
+            &files(vec![modified(
+                "a.txt",
+                "x = 1\r\nkeep\n",
+                "x = 2\r\nkeep\n",
+            )]),
+            layout::CONTEXT,
+        );
         let text = Rope::from(shown.text.as_str());
         let ranges = Ranges::new(&shown.rows, &hunks(&shown.rows), &text);
         let texts = |ranges: &[Range<usize>]| -> Vec<String> {

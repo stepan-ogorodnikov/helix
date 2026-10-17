@@ -4108,6 +4108,30 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
     },
     // FORK: review-stream
     TypableCommand {
+        name: "review-restore",
+        aliases: &[],
+        doc: "Put the base's text back over the hunks the selections touch in the review, in each file's buffer",
+        fun: super::review::review_restore,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    // FORK: review-stream
+    TypableCommand {
+        name: "review-context",
+        aliases: &[],
+        doc: "Show the given number of unchanged lines around each hunk of the review, or say how many it shows",
+        fun: super::review::review_context,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(1)),
+            ..Signature::DEFAULT
+        },
+    },
+    // FORK: review-stream
+    TypableCommand {
         name: "review-refresh",
         aliases: &[],
         doc: "List the changed files again and read them from disk, keeping the review's place",
