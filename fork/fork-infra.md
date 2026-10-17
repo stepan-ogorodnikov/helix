@@ -54,7 +54,7 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | 6 | Done | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
 | 7 | Done | Add the testing and manual-verify guides. | `agents/TESTING.md` and `agents/VERIFY.md`. |
 | 8 | Done | Add the review guide. | `agents/REVIEW.md`. |
-| 9 | | Add the rebase playbook. | `agents/REBASE.md`. |
+| 9 | Done | Add the rebase playbook. | `agents/REBASE.md`. |
 | 10 | | Write down how a plan is split and approved. | `AGENTS.md` §Plans, from koloda's `IMPLEMENTATION-PLAN.md`. |
 
 Next, out of this plan's scope:
@@ -75,7 +75,7 @@ Next, out of this plan's scope:
   It also formats the modules a file declares, so it reached past the staged files anyway.
 - `land.sh` refuses untracked files except markdown. An untracked source file could let the checks pass on code the commits lack, and draft plans stay in `fork/` untracked.
 - `land.sh` skips upstream's `query-check`, `indent-check`, `highlight-check`, and `theme-check`. They only cover `runtime/`, which no fork feature touches. `HELIX.md` says when to run them.
-- `land.sh --check` passed on the whole stack in TODO.
+- `land.sh --check` passed on the stack at item 5: fmt, clippy, docs, 177 integration tests, and a clean docgen.
 - A seam marker names its feature, `// FORK: <slug>`, so dropping a feature can find its seams. No seam had a marker yet, so nothing needed rewriting.
 - `document.rs` joined the hot list: 16 upstream commits in the year to 2026-10-17, as many as `editor.rs`.
 - Item 10 was missing from the first version of this plan. The decisions put koloda's plan rules in `AGENTS.md`, but no item did it.
@@ -83,3 +83,6 @@ Next, out of this plan's scope:
 - The harness notes in `TESTING.md` about the idle timer and the working directory came from the dropped diff review's integration tests.
 - `REVIEW.md` doesn't make a missing integration test for picker behavior Blocking, as the report proposed.
   The harness can't reach a picker's state or change the working directory, so the rule is the test layer `TESTING.md` names.
+- The rebase happens on `fork` itself, not on the report's `rebase/YYYY-MM` branch. The `pre-rebase-YYYY-MM` tag already keeps the old stack.
+- `land.sh --check` checks trailers on all of `master..fork` and skips the `origin/fork` ancestry check, so it works on a rebased stack before the force-push.
+- `REBASE.md` keeps `master` and the tags local while Actions are on for the GitHub fork. Pushing either would start upstream's workflows there.

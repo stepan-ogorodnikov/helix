@@ -19,6 +19,8 @@ Never push to `helix-editor/helix`, and never open or comment on its pull reques
 
 Push `fork` only through `tools/fork/land.sh`, and only when the human asks. It checks the trailers, runs upstream's CI checks, and fast-forwards `origin/fork`. `tools/fork/land.sh --check` runs the same checks and pushes nothing.
 
+Move the stack onto a new upstream only when the human asks, as `agents/REBASE.md` says. It's the one time `origin/fork` is force-pushed.
+
 In a fork clone, `gh` picks the parent repository until `gh repo set-default stepan-ogorodnikov/helix` has run. Check `gh repo set-default --view` before using `gh`.
 
 ## Commits
@@ -54,4 +56,5 @@ A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the c
 - `agents/HELIX.md`: upstream's docs and checks, where code lives, comment tags. Read it before changing Rust code.
 - `agents/TESTING.md`: which tests to write, where they go, and how to run them. Read it before writing or changing a test.
 - `agents/REVIEW.md`: how to review a diff on `fork`. Read it for any review.
+- `agents/REBASE.md`: moving the stack onto a new upstream.
 - `agents/VERIFY.md`: how to hand a user-visible change back for a check. Never run `hx` interactively or drive it through a terminal.

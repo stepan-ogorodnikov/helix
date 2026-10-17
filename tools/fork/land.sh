@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Lands fork on origin/fork. It checks the trailers of the commits that origin/fork
-# doesn't have, runs upstream's CI checks, then fast-forwards origin/fork.
+# Lands fork on origin/fork. It checks the trailers on master..fork, runs
+# upstream's CI checks, then fast-forwards origin/fork.
 # It never force-pushes. Moving the stack onto a new upstream does that by hand,
 # as agents/REBASE.md says.
 #
@@ -28,14 +28,16 @@ untracked=$(git ls-files --others --exclude-standard -- . ':(exclude)*.md')
 [ -z "$untracked" ] || die "untracked files could change the build:"$'\n'"$untracked"
 
 git fetch --quiet origin
-git merge-base --is-ancestor origin/fork HEAD ||
-  die "fork has diverged from origin/fork. Rebase onto it, or follow agents/REBASE.md after an upstream rebase."
+if [ "$push" = 1 ]; then
+  git merge-base --is-ancestor origin/fork HEAD ||
+    die "fork has diverged from origin/fork. Rebase onto it, or push a rebased stack as agents/REBASE.md says."
+  [ -n "$(git rev-list origin/fork..HEAD)" ] || die "origin/fork already has every commit."
+fi
 
-commits=$(git rev-list --reverse origin/fork..HEAD)
-[ -n "$commits" ] || [ "$push" = 0 ] || die "origin/fork already has every commit."
-
+# WHY: the whole stack, not just what origin/fork lacks, so --check also covers
+# a stack just moved onto a new upstream.
 problems=()
-for commit in $commits; do
+for commit in $(git rev-list --reverse master..HEAD); do
   subject=$(git log -1 --format='%h %s' "$commit")
   slugs=$(git log -1 --format='%(trailers:key=Patch,valueonly)' "$commit" | sed '/^$/d')
   if [ "$(printf '%s' "$slugs" | grep -c .)" -ne 1 ]; then

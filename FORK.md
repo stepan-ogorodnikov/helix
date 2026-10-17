@@ -23,11 +23,13 @@ In a new clone:
 git remote add upstream https://github.com/helix-editor/helix.git
 gh repo set-default stepan-ogorodnikov/helix
 git config core.hooksPath tools/fork/hooks
+git config rerere.enabled true
 ```
 
 The hooks run on commit.
 `pre-commit` formats the crates the staged Rust files belong to, and runs clippy on them.
 `commit-msg` checks the `Patch:` trailer on `fork`.
+`rerere` remembers how a conflict was resolved, for the next rebase onto upstream (`agents/REBASE.md`).
 
 ## Build
 
