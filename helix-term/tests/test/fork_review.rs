@@ -402,6 +402,34 @@ async fn new_lines_take_the_files_line_ending() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn indenting_a_row_uses_the_files_indent() -> anyhow::Result<()> {
+    let indented = |line: &str| {
+        format!("fn b() {{\n  if x {{\n    {line}\n  }}\n  if y {{\n    two();\n  }}\n}}\n")
+    };
+    let repo = repo(
+        &[("a.txt", "a\n"), ("b.rs", &indented("one();"))],
+        &[("b.rs", Some(&indented("uno();")))],
+    );
+    let b = repo.path().join("b.rs");
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("/uno<ret><gt>"),
+        Some(&|app| {
+            assert_eq!(
+                buffer_text(app, &b),
+                Some(indented("  uno();")),
+                "two spaces, as the file indents, though it wasn't open"
+            );
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_new_line_after_a_last_line_with_no_line_ending_ends_it() -> anyhow::Result<()> {
     let repo = repo(&[("a.txt", "a\nb")], &[("a.txt", Some("a\nB"))]);
     let file = repo.path().join("a.txt");

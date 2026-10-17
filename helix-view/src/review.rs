@@ -11,7 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use helix_core::encoding::Encoding;
+use helix_core::indent::{auto_detect_indent_style, IndentStyle};
 use helix_core::line_ending::{auto_detect_line_ending, get_line_ending, LineEnding};
+use helix_core::syntax::Loader;
 use helix_core::{Assoc, ChangeSet, Language, Transaction};
 use helix_core::{Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange, Hunk};
@@ -143,6 +145,8 @@ pub struct Stream {
     /// Digits of the widest base and source line numbers.
     widths: [usize; 2],
     pub ranges: Ranges,
+    /// The buffer's own indent, for a file that shows none.
+    indent: IndentStyle,
     /// Files' buffers with forwarded changes not yet in their history, and the
     /// view each was made from.
     pending: Vec<(DocumentId, ViewId)>,
@@ -241,6 +245,8 @@ struct File {
     /// The hunks of `content`, once laid out. `None` inside when it's too
     /// large to diff.
     hunks: OnceLock<Option<Vec<Hunk>>>,
+    /// The indent the source shows, or else its language's, once looked for.
+    indent: OnceLock<Option<IndentStyle>>,
 }
 
 impl File {
@@ -253,6 +259,19 @@ impl File {
         auto_detect_line_ending(source)
             .or_else(|| auto_detect_line_ending(base))
             .unwrap_or(LineEnding::LF)
+    }
+
+    fn indent(&self, loader: &Loader) -> Option<IndentStyle> {
+        *self.indent.get_or_init(|| {
+            let Content::Text { source, .. } = &self.content else {
+                return None;
+            };
+            auto_detect_indent_style(source).or_else(|| {
+                let config = loader.language(self.language?).config();
+                let unit = &config.indent.as_ref()?.unit;
+                Some(IndentStyle::from_str(unit))
+            })
+        })
     }
 }
 
@@ -267,6 +286,7 @@ impl From<Section> for File {
             language: None,
             trees: syntax::Trees::default(),
             hunks: OnceLock::new(),
+            indent: OnceLock::new(),
         }
     }
 }
@@ -521,6 +541,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         selections: HashMap::new(),
         widths: [1, 1],
         ranges: Ranges::default(),
+        indent: doc.indent_style,
         pending: Vec::new(),
         relayout: false,
     });
@@ -671,6 +692,10 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
             (None, None) => old.hunks.clone(),
             _ => OnceLock::new(),
         };
+        file.indent = match source {
+            None => old.indent.clone(),
+            Some(_) => OnceLock::new(),
+        };
         maps.push(Some((new, base, source)));
     }
     if let Some((file, lines)) = open {
@@ -809,6 +834,7 @@ mod tests {
             selections: HashMap::new(),
             widths: layout.widths,
             ranges: Ranges::default(),
+            indent: IndentStyle::Tabs,
             pending: Vec::new(),
             relayout: false,
         }

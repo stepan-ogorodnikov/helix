@@ -52,13 +52,14 @@ pub fn sync(editor: &mut Editor, completing: bool) {
         editor.set_status(message);
     }
     save_selections(editor, doc_id);
-    fit_line_ending(editor, doc_id);
+    fit_file_style(editor, doc_id);
     fit_gutters(editor);
 }
 
-// WHY: `o` and `Enter` insert the buffer's line ending, so a new line gets
-// the line ending of the file it goes to.
-fn fit_line_ending(editor: &mut Editor, doc_id: DocumentId) {
+// WHY: `o` and `Enter` insert the buffer's line ending, and `Tab` and `>` its
+// indent. Both come from the file under the cursor, so what they insert is the
+// file's own.
+fn fit_file_style(editor: &mut Editor, doc_id: DocumentId) {
     let view = editor.tree.get(editor.tree.focus);
     let (Some(stream), Some(doc)) = (editor.review.stream.as_ref(), editor.documents.get(&doc_id))
     else {
@@ -69,15 +70,20 @@ fn fit_line_ending(editor: &mut Editor, doc_id: DocumentId) {
     }
     let text = doc.text().slice(..);
     let row = text.char_to_line(doc.selection(view.id).primary().cursor(text));
-    let Some(ending) = stream
-        .rows
-        .get(row)
-        .map(|row| stream.files[row.file()].ending())
-    else {
+    let Some(file) = stream.rows.get(row).map(|row| &stream.files[row.file()]) else {
         return;
     };
+    // WHY: an open buffer's indent has its editorconfig and language in it.
+    let indent = match editor.document_by_path(file.change.path()) {
+        Some(doc) => doc.indent_style,
+        None => file
+            .indent(&editor.syn_loader.load())
+            .unwrap_or(stream.indent),
+    };
+    let ending = file.ending();
     if let Some(doc) = editor.documents.get_mut(&doc_id) {
         doc.line_ending = ending;
+        doc.indent_style = indent;
     }
 }
 
@@ -186,6 +192,7 @@ fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), Stri
         // parse and hunks of the old text unless they go here.
         file.trees.source = Default::default();
         file.hunks = Default::default();
+        file.indent = Default::default();
         file.seen = Some((id, version));
         if !stream.pending.iter().any(|&(doc, _)| doc == id) {
             stream.pending.push((id, view));
