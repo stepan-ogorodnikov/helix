@@ -95,3 +95,14 @@ The hooks run on commit.
 - Adds: the agent rules in `AGENTS.md` and `agents/`, this ledger, the commit hooks, and `tools/fork/land.sh`.
 - Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `agents/`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
 - Drop when: never.
+
+### review-stream
+
+- Status: planned. No code yet.
+- Plan: `fork/review-stream.md`.
+- Adds, from phase 1: `:review` opens a read-only buffer with every changed file's hunks, Hunk style. `ret` opens the file at that line.
+- Upstream files: none yet. The plan's section 4 lists the seams each phase adds.
+- Fork-owned: `fork/review-stream.md`.
+- Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
+- Drop when: upstream ships a multi-file diff view in one buffer.
+- Rulings: the dropped diff review feature's plan and code stay under the local tag `archive/diff-review`. The tag is never pushed.

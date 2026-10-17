@@ -18,6 +18,7 @@ Reconciled 2026-10-17 against fork `fork` at `da828299`, upstream `master` at `b
 - Feature plans live in `fork/<feature>.md` and their commits go on `fork`.
   That replaces the report's task files on `task/<slug>` branches.
 - The diff review feature was dropped on 2026-10-17. Its plan stays out of the tree until it's reworked.
+  The rework is `fork/review-stream.md`. The old plan and code are under the local tag `archive/diff-review`.
 - koloda since `20db0e4`: agents route their own guides, task branches stay local until they land, and a `commit-msg` hook checks the trailer.
 - `cargo clippy --workspace --all-targets -- -D warnings` fails on the fork's `on_cycle_changes` field in `ui/picker.rs` (`type_complexity`).
   No gate can pass until that's fixed.
@@ -61,7 +62,7 @@ Next, out of this plan's scope:
 
 - An integration test for `picker-keys`, the first task under `TESTING.md`.
 - `// FORK:` markers on the existing seams, which the ledger lists under Gaps.
-- The diff review plans, `fork/diff-review.md` and `fork/review-stream.md`.
+- The review stream, `fork/review-stream.md`. It supersedes the diff review plan, which the local tag `archive/diff-review` keeps.
 
 ## Found
 

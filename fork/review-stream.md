@@ -1,0 +1,401 @@
+# Helix fork: a review stream
+
+Snapshot: fork branch `fork` at `81f68636`, on upstream `master` at `ba40e547`.
+Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed's project diff.
+Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
+Its plan and code stay under the local tag `archive/diff-review` (6.1).
+
+Status: phase 0 done 2026-10-17. Phase 1 starts when the human asks for it.
+
+## Bottom line
+
+- **Build:** one buffer that shows every changed file, Hunk style.
+  - Only the hunks and their context show. The unchanged code between them collapses to a row.
+  - Every row is a real line of the buffer, so motions, selections, `/`, and yank work across all of it.
+  - It starts read-only. `enter` opens the file at that line, and you edit there, with LSP. `C-o` comes back.
+- **Then, if it works out, editing in the stream.** Added and context lines become editable, and an edit lands in the file's own buffer at once.
+  It's the last milestone. Dropping its commits leaves a working read-only review.
+- **How:** the stream is an ordinary Helix document. Fork-owned code builds it and keeps it current through upstream's events and public API.
+- **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 3.
+  None is in `document.rs` or `application.rs`. `ui/editor.rs` takes the most, about 5–7.
+- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 1.1–1.7k. LSP in the stream is unknown until a spike.
+- **Biggest risks:** keeping the cursor still while rows appear and vanish around it (phase 2, which the read-only review already needs).
+  Then, for editing, the sync engine, undo across files, and completion.
+
+## 1. The view
+
+```
+ helix-term/src/ui/editor.rs  modified                             header row
+          ⋯ 40 unchanged lines                                     gap row
+  41  41    fn render(&self, area: Rect) {                          context
+  42     -      let width = area.width - 2;                         removed
+      42 +      let width = area.width.saturating_sub(2);           added
+  43  43        let height = area.height;
+          ⋯ 120 unchanged lines
+ helix-view/src/review.rs  new file
+       1 +  pub struct ReviewStream {
+```
+
+The gutter shows the old line number, the new line number, and the sign. The text has no `+` or `-`, so yanked code comes out clean.
+A header's text is the path and the status. The rule around it is a decoration (phase 4).
+
+| Row | Text | Editable from phase 7 | Maps to |
+| --- | --- | --- | --- |
+| Header | path and status | no | the file |
+| Gap | `⋯ N unchanged lines` | no | a hidden range of source lines |
+| Removed | base line | no | a base line |
+| Context | source line | yes | a base line and a source line |
+| Added | source line | yes | a source line |
+
+Every row is exactly one line of the stream document. Removed rows go above the added rows, as in git and Hunk.
+
+What works because the stream is a document: motions, `/` across every file's hunks, selections, multiple cursors across files, registers, macros, splits.
+
+## 2. Why a buffer
+
+Three other shapes were weighed.
+
+- **A pane, like the file picker.** Opened from space mode, as an overlay, with `enter` jumping to the file.
+  - It would need no render seams, and it could draw Hunk's split layout.
+  - Rejected: Helix commands act on the focused view in the editor's tree. `current!` reads `editor.tree.focus` (`helix-view/src/macros.rs:13`).
+    An overlay isn't in the tree, so motions, select mode, `/`, and yank would each be rewritten on `helix-core`, and wouldn't follow the user's keymap.
+    Read-only editor features inside hunks are a requirement.
+- **An inline diff on each file**, as the diff review plan built. It walked files one at a time, not as one stream.
+- **A multibuffer.** The diff review plan rejected one (its option D) because a view shows one document, and because the prototype put most of its code in hot files.
+  This design keeps one document per view. The stream is that document.
+  The many-files part lives in fork-owned code that copies text from the file buffers into the stream, and, once editing exists, back.
+  It runs on upstream's public API (`Document::apply`, `history`, `reset_modified`, `indent_style`, `line_ending`, `replace_diagnostics`) and on its events (`DocumentDidChange`, `PostCommand`, `PostInsertChar`, `OnModeSwitch`, `DiagnosticsDidChange`, `DocumentDidClose`).
+
+Prior art:
+
+- matoous's `md/multibuffer` branch (#15611) has the same shape: one document holding the excerpts.
+  - It writes back to the files on `:w`, not as you type.
+  - It puts about 850 lines into `view/editor.rs` (+588) and `document.rs` (+259).
+  - It changes `helix-core` (`text_annotations.rs`, `doc_formatter.rs`) to draw headers as virtual lines above line 0.
+    Here headers are real lines, so the line-0 limit doesn't come up.
+  - It parses each excerpt on its own. A hunk that starts inside a string highlights wrong. Here highlights come from full-file parses (3.5).
+- Zed's project diff is editable, and the cursor moves through deleted regions as through any text.
+  Zed's multibuffer history groups one transaction per buffer (`buffer_transactions` in `crates/multi_buffer/src/transaction.rs`). The stream's undo log (3.9) has the same shape.
+  Zed can undo one buffer's transaction out of order, because its buffers are CRDTs. Helix's history can't.
+
+## 3. Design
+
+### 3.1 The stream document
+
+- A scratch document: no path, no language, no language servers.
+- Its text is the rows, one per line. A source row keeps the file's line ending, so stream and source chars match one to one inside a row.
+- The row table lives on the editor, in a fork type: `Editor::review`.
+  It needs other documents and is read where `&Editor` is at hand: gutter, render, commands.
+- A **run** is a maximal stretch of consecutive editable rows. A run maps to one contiguous range of source text.
+  The two runs on either side of a removed block are adjacent in the source. Runs matter once editing exists (3.9).
+- Headers and gaps are real lines.
+  The cursor can stop on them, and `ret` on them does something useful (3.6).
+  Virtual lines can't go above line 0 without a `helix-core` change, which the prototype needed.
+- Files come in path order. Context is 3 lines, as in git.
+  Hunks whose context touches merge, as in git. A gap row appears only when lines are hidden.
+- One stream per editor. `:review` with a stream open switches to it. `:review-refresh` rebuilds it from git.
+  Several views of it work like views of any document.
+
+### 3.2 Bases and sources
+
+- Each file has a base: the `HEAD` blob, or the index blob in an `unstaged` review, converted to worktree text.
+  `HEAD` comes from upstream's `DiffProviderRegistry::get_diff_base`. The index needs `git/index.rs` (phase 6).
+- Each file has a source: the file's document if one is open, or the text on disk.
+  The read-only review never opens a document for a file. Editing does (3.9).
+- The stream computes hunks itself, with `imara-diff`, Histogram, and upstream's size caps (`MAX_DIFF_LINES`, `MAX_DIFF_BYTES`).
+  The diff worker's hunks lag by its 96 ms debounce, and the layout has to be right before the next key.
+  A file over the caps gets a header and no rows.
+
+### 3.3 Read-only (phase 1)
+
+- A `DocumentDidChange` hook on the stream queues the inverse of each change.
+  The fork's own edits to the stream carry a flag, and the hook skips them.
+- A `PostCommand` hook applies the queue, restores the selections saved after the last command, and says why in the status line.
+- Edits that don't come from a key, like typable commands and bracketed paste, fire no `PostCommand`.
+  The change hook dispatches a callback with `job::dispatch_blocking` for them, which runs on the next turn of the event loop.
+  Such an edit may show for a frame. If it does, a seam at the start of `EditorView::render` restores it before drawing.
+- An `OnModeSwitch` hook ends insert mode in the stream at once. Phase 1 finds out whether the hook can switch modes itself, or has to dispatch it.
+- After a restore, the stream's history is cleared and `reset_modified` is called, so `u` finds nothing and the stream never counts as modified.
+- `:w` in the stream fails, as for any buffer with no path.
+
+### 3.4 Keeping it current (phase 2)
+
+- A source's `DocumentDidChange` marks its file stale. The next `PostCommand`, or the dispatched callback, re-diffs stale files and reconciles them.
+- **Reconcile** builds the rows a file should have, compares them with its current rows by identity, and applies one transaction to the stream:
+  insert and delete rows, and copy source text into rows whose text changed.
+  Selections map through it like through any edit, so the cursor stays on its row, in every view of the stream.
+- **Identity, not text.** Rows are matched by `Header(file)`, `Gap(file, next source line)`, `Removed(file, base line)`, and `Editable(file, source line)`.
+  A text diff (`helix_core::diff::compare_ropes`) matches equal lines, and diff output often has neighboring lines that are equal (a `}` removed above a `}` kept).
+  Matching by text could leave the cursor on the removed row instead of the line it was on.
+- So an edit made after `enter` shows in the stream by the time `C-o` brings you back.
+- A file that isn't open changes only on disk, and there's no file watcher in this tree. `:review-refresh` picks it up.
+- Showing a gap's hidden lines is a relayout too, so it comes here.
+
+### 3.5 Rendering
+
+- **Gutter (phase 1).** `gutter.rs`'s `line_numbers`, `line_numbers_width`, and `diff` take a stream branch: old and new numbers, then the sign.
+  No new `GutterType`, so no change to the enum in `editor.rs` or to config parsing.
+  The sign column uses `diff.plus` and `diff.minus`, so every theme tells the rows apart.
+- **Row tints (phase 4)** use #15631's scopes, `diff.{plus,minus,delta}.view`, as diff review did.
+- **Word highlights (phase 4)** reuse `words.rs` from `archive/diff-review`.
+- **Header and gap rows (phase 4)** get a decoration. Their styles fall back to existing UI scopes, so bundled themes work. Phase 4 names the scopes.
+- **Syntax (phase 5).**
+  - The new side uses the source document's own `Syntax` when the file is open. A loaded document is parsed already, and it updates as you type.
+  - The text on disk and the old side are parsed on the blocking pool and cached per file, as diff review's phase 2 did.
+  - The highlights of rows on screen map into stream positions and go in as overlays.
+  - The document highlighter is off for the stream. That's one seam in `render_view`.
+
+### 3.6 Keys
+
+The stream gets its own keymap: your keymap with the stream's bindings over it.
+`EditorView` swaps it in while a stream has focus, so pending keys and sticky modes stay per keymap. That costs a field and a seam, in phase 1.
+The stream's bindings replace commands, not keys, so your own bindings for `goto_next_change` and the others carry over.
+
+Draft:
+
+| Key | In the stream | Upstream meaning | Phase |
+| --- | --- | --- | --- |
+| `ret` | Code row: open the file at that line. Header: open the file. Gap: open the file at the first hidden line, then from phase 2 show the hidden lines | unbound in normal mode | 1, 2 |
+| `]g` `[g` | next / previous hunk, across files | next / previous change | 3 |
+| `]G` `[G` | last / first hunk | last / first change | 3 |
+| `]F` `[F` | next / previous file | unbound | 3 |
+| `u` `U` `A-u` `A-U` | the stream log (3.9) | the document history | 8 |
+
+`ret` records a jump first, so `C-o` returns to the stream. `commands/review.rs` is a child of `commands`, so it can call the private `push_jump`.
+
+Typable: `:review [all|unstaged|staged]`, `:review-refresh`, `:review-context <n>`, `:stage-hunk`, `:unstage-hunk`, `:review-restore`.
+`:review-restore` writes the base text over the hunks under the selection into the source, like `:reset-diff-change`, and the refresh removes them from the stream.
+It opens the file's document if it isn't open, so the restore can be undone there.
+
+### 3.7 Scopes and file kinds
+
+- `:review` and `:review all` diff against `HEAD`, like the gutter. `:review unstaged` diffs against the index (phase 6).
+- `:review staged` shows `HEAD` → index (phase 6). Its new side is the index, not a file, so it stays read-only after phase 7.
+- A new or untracked file has an empty base, so all its rows are added.
+- A deleted file has only removed rows. `:review-restore` brings it back.
+- A renamed file diffs against its old path.
+- A conflicted file diffs against `HEAD`, as diff review's phase 4 ruled, and says `conflict` in its header.
+- A binary file, or one over the size caps, shows its header and no rows.
+
+### 3.8 Staging (phase 6)
+
+- Port diff review's phase 4 from `archive/diff-review`: `helix-vcs/src/git/index.rs`, the `helix-vcs/src/index.rs` facade, and the logic in `typed/stage_hunk.rs`.
+  Its rulings stand: `git hash-object --path` and `git update-index`, the trust gate, refusing a conflicted file.
+- Staging and unstaging work on the hunks or lines under the selection in the stream.
+- An `unstaged` review reloads its bases after staging, so staged hunks leave the stream.
+- The changed-files picker jumps into the stream at the file's header, instead of opening the file.
+
+### 3.9 Editing (phases 7–8, if it works out)
+
+Everything here builds on phase 2's reconcile. If phase 7's relayout feels wrong in use, its commits are dropped, and the read-only review stays.
+
+**Loading.** The stream opens a file's document with `Action::Load` when an edit reaches its section.
+`Action::Load` gives the document a selection for the current view and no view of its own.
+A file that loads with text different from what the stream showed gets its section rebuilt, and an edit that raced it is refused.
+Closing the stream closes the documents it loaded that are unmodified and shown in no view.
+
+**Capture.** Phase 1's change hook queues `(doc, old_text, changes)` for the stream and its sources, in order, instead of inverses.
+The hook only gets `&mut Document`, so it can't touch the other side itself (the note at `document.rs:223`).
+
+**Sync points**, each with `&mut Editor`:
+
+- `PostCommand` and `PostInsertChar` hooks, after every command and every typed character. Macros sync between their keys.
+- The start of `EditorView::handle_event` and `EditorView::render`. Seams.
+  They catch edits that don't come from a command, without the frame of lag a dispatched callback has: typable commands, bracketed paste, LSP edits, and job callbacks.
+
+**A sync:**
+
+1. **Check the stream's edits.** A change must fall inside one run.
+   An insert at a run's start is allowed. The line break that ends a run can't be deleted, since the stream can't show the join.
+   If any change breaks the rule, the whole window reverts, as in phase 1, and a status message says why.
+2. **Forward.** Shift each change by its run's offset, and apply the result to the source document with the stream's view id.
+3. **Map rows.** Move the row table through the stream's and the sources' changes.
+4. **Reconcile** each touched file, as in phase 2.
+5. **Tidy.**
+   - Commit and clear the stream's own history, and `reset_modified`, so the stream never counts as modified.
+   - Set the stream's `indent_style` and `line_ending` to those of the file under the primary cursor.
+
+A sync window normally holds one command's changes.
+If the stream and a source both changed in one window (rare: an LSP edit and a key, with no render between them), the sync replays the queue in order.
+It shifts the source's changes past the stream's. If they overlap, the file's section is rebuilt from the source and the stream edit is refused.
+
+**No echo.** Reconcile compares the rows a file should have with the rows it has.
+A forwarded edit already made them equal, so it causes no second edit.
+
+**Relayout is live, as in Zed** (decision 8.1).
+Edit a context line, and its old version appears above it as a removed row. The line itself turns into an added row.
+The new row is an insert before the cursor's line, so the cursor stays on the text it was on.
+Change an added line back to the base text, and its removed twin vanishes.
+
+**Undo and redo (phase 8).**
+
+- The stream's own history is never used. Its revisions would mix your edits with relayouts.
+- The stream keeps a log. Each entry is one stream command and lists the `(source document, revision after)` pairs it touched.
+  A stream command is one normal-mode command, or one insert session ending at `Esc`.
+  When it ends, the sync calls `append_changes_to_history` on each touched source.
+- `undo` in the stream pops an entry and undoes each listed source whose current revision matches.
+  If a source moved on since, for example you edited it in another split, the undo stops and names the file.
+- `redo` is the same in reverse.
+- The stream's keymap swaps `undo`, `redo`, `earlier`, and `later` for stream versions, on whatever keys you bound them to.
+  Typed `:earlier`/`:later` in the stream find an empty history and do nothing.
+
+**Save (phase 8).**
+
+- `:w` in the stream writes every modified source the stream touched. It's one seam at the top of `write_impl`.
+  It has to come before `write_impl`'s whitespace trims, which would otherwise edit removed rows and be reverted.
+- `:wa` and the quit checks need nothing. The sources are ordinary documents, and the stream never counts as modified.
+  `write_all_impl` skips documents that aren't modified.
+
+**Until phase 9**, editing in the stream is plain text editing:
+
+- no completion, hover, or goto
+- new lines copy the previous line's indent, since the stream has no indent queries
+- no format on type
+
+### 3.10 LSP (phase 9)
+
+Diagnostics come first, need no seam, and don't need editing. They could move into the read-only milestone.
+A `DiagnosticsDidChange` hook gets `&mut Editor`, maps each source's diagnostics onto its rows, and calls `replace_diagnostics` on the stream.
+Inline diagnostics, `]d`, and the diagnostics gutter then work as in any buffer. Only open files have diagnostics.
+
+Goto, hover, references, rename, and code actions:
+
+- They need stream versions that send the request for the source document, at the mapped position, bound in the stream's keymap.
+- Upstream's versions read the current document. `commands/lsp.rs` has 19 `doc!`/`current!` call sites.
+- The spike decides between copying their result handling and seaming them.
+
+Completion is the likely first real core change:
+
+- The request has to go to the source's servers, and the item's edits have to map back into the stream.
+- The code is in `handlers/completion/` and `ui/completion.rs`.
+- Preview inserts are ghost transactions: a savepoint restore, then the final edit. The sync forwards them all in order, so the source sees the preview too.
+
+Rejected: switching the view to the source document while a command runs. Completion and goto answer asynchronously, after the switch back.
+
+## 4. Upstream seams
+
+One or two lines each, marked `// FORK:`. Commit counts are on upstream `master` for the year to 2026-10-17.
+
+| File | Commits/yr | Seam | Phase |
+| --- | --- | --- | --- |
+| `helix-view/src/editor.rs` | 16 | Field `review` on `Editor`, and its default | 1 |
+| `helix-view/src/lib.rs` | 3 | `pub mod review;` | 1 |
+| `helix-view/src/gutter.rs` | 3 | Stream branches in `line_numbers`, `line_numbers_width`, `diff` | 1 |
+| `helix-term/src/ui/editor.rs` | 9 | Keymap field on `EditorView`, swapped in for the stream | 1 |
+| `helix-term/src/ui/editor.rs` | | Restore at the start of `render`, only if the dispatched callback's frame of lag shows | 1 |
+| `helix-term/src/ui/editor.rs` | | `render_view`: one decoration, overlays, highlighter off for the stream | 4–5 |
+| `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event` and `render` | 7 |
+| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call | 1 |
+| `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8 |
+| `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6 |
+| `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8 |
+| `helix-vcs/src/git.rs`, `helix-vcs/src/lib.rs` | 3, 1 | `mod index;` lines, as in diff review phase 4 | 6 |
+| `helix-view/Cargo.toml` | 10 | `imara-diff`, unless the diff goes through `helix-vcs` | 1 |
+| `book/src/*` | | Commands, keys, theme scopes | each |
+| `helix-term/tests/integration.rs` | 1 | `mod review_stream;` | 1 |
+| `helix-term/src/commands/lsp.rs`, `handlers/completion/*`, `ui/completion.rs` | 6, 0, 1 | Not known until the phase 9 spike | 9 |
+
+Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
+
+## 5. Fork-owned files
+
+- `helix-view/src/review.rs`: `ReviewStreams`, the `Editor` field type. The row table and lookups.
+- `helix-view/src/review/layout.rs`: base + source + hunks + context → rows. Pure, unit-tested. Phase 1.
+- `helix-view/src/review/reconcile.rs`: current rows vs wanted rows → one stream transaction. Pure, unit-tested. Phase 2.
+- `helix-view/src/review/gutter.rs`: old and new numbers, signs. Phase 1.
+- `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phase 7.
+- `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync, loading sources, and the undo log (phases 7–8).
+- `helix-term/src/handlers/review.rs`: the `DocumentDidChange`, `PostCommand`, and `OnModeSwitch` hooks, then `PostInsertChar`, `DiagnosticsDidChange`, and `DocumentDidClose`.
+- `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and save.
+- `helix-term/src/keymap/review.rs`: the stream keymap overlay.
+- `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
+- Phase 6: `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, restored from `archive/diff-review` and adapted.
+- `helix-term/tests/test/review_stream.rs` and children: integration tests over a temporary git repository, as `fork_diff/review.rs` did.
+
+## 6. Phases
+
+| Phase | Status | Scope | Fork-owned lines (rough) | Risk |
+| --- | --- | --- | --- | --- |
+| 0. Plan | Done | Commit this plan and a `review-stream` ledger entry (6.1). | 0 | Low |
+| **Read-only review** | | | **2.5–3.8k** | |
+| 1. Read-only stream | Planned | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200 | Medium: render seams, row math, the guard |
+| 2. Keep it current | Planned | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500 | **High**: the cursor while rows appear and vanish |
+| 3. Navigation | Planned | Hunk and file motions across files | 150–300 | Low |
+| 4. Look | Planned | Row tints, header and gap decorations, word highlights | 200–400 | Low |
+| 5. Syntax | Planned | Highlights from full parses on both sides | 400–600 | Medium: mapping highlight layers |
+| 6. Staging | Planned | Index base, `unstaged`/`staged` reviews, stage and unstage, `:review-restore`, `:review-context`, picker jump | 500–800, about 600 of it ported | Low: ported code |
+| **Editing, if it works out** | | | **1.1–1.7k** | |
+| 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
+| 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
+| 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
+
+Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
+Each later phase adds to it. Phase 2 comes second because it's the riskiest phase that the read-only review needs, and phase 7 reuses its reconcile.
+If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before undo and LSP build on it.
+
+### 6.1 Phase 0: the plan
+
+- There's nothing to revert. On 2026-10-17 `fork` was rebuilt from `eb31e577`, before the diff review plan's first commit.
+  `FORK.md` has no `diff-review` entry, and `helix-term` has no `imara-diff` dependency.
+- The diff review commits, `cb307282`..`dce1c2e8`, are on no branch. The local tag `archive/diff-review` keeps them from `git gc`.
+  The tag is never pushed: `land.sh` pushes only `fork`.
+  - `git show archive/diff-review:fork/diff-review.md` reads the old plan. Its research still holds: upstream PRs, and the diff lock hang in its 5.1.
+  - `git checkout archive/diff-review -- <path>` restores a file (9).
+- This plan goes in its own commit, before any code, as `AGENTS.md` asks. A `review-stream` entry in `FORK.md`, status planned, goes in the same commit.
+  So does the fix to `fork/fork-infra.md`, which named `fork/diff-review.md` as a next step.
+
+## 7. Risks
+
+| Risk | Where | Mitigation |
+| --- | --- | --- |
+| Cursor jumps when rows appear or vanish | Reconcile, phase 2 | Match rows by identity. Unit tests on layout transitions: context → modified, modified → context, hunks merging and splitting. |
+| An edit slips past the read-only guard | Guard, phase 1 | Key edits restore in `PostCommand`. Others restore in a dispatched callback, or at the `render` seam if the callback lags. Debug builds assert that the stream's text equals its rows after each restore. |
+| Stream and source drift apart | Sync, phase 7 | One queue in event order. The fork's own edits are flagged. Debug builds assert after each sync that every editable row equals its source line. |
+| Undo surprises | Stream log, phase 8 | Undo only when the source's revision matches. Otherwise stop and name the file. |
+| An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete but still leaves you in insert mode. |
+| Slow big reviews | Refresh, reconcile | Re-diff only stale files. Size caps per file. Load sources only when edited. |
+| Upstream churn | `ui/editor.rs` (9/yr), `commands.rs` (39/yr) | Seams stay one line. Bodies live in fork files. |
+| LSP needs core changes | Phase 9 | Spike first. Diagnostics need none. Without the rest, the stream still works for editing. |
+
+## 8. Open decisions
+
+1. **Relayout timing**, for editing. Live as you type, like Zed (recommended), or deferred until `Esc`, with rows fixed while in insert mode.
+2. **Context**, for phase 2. 3 lines (git's default). How much `ret` on a gap shows: all of it, or 10 lines at a time.
+3. **`staged` scope**, for phase 6. Read-only even with editing, since the index isn't a file. The alternative is to drop the `staged` scope.
+4. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
+5. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+
+Decided, 2026-10-17:
+
+- **Order:** the read-only review first, editing last, so there's a basic review to build on.
+  `AGENTS.md` puts the riskiest phase as early as its dependencies allow, which would put editing right after phase 2.
+  The cost: phases 4–5 may need rework when relayout goes live in phase 7.
+- **No default key for `:review`.** You bind it, for example `[keys.normal.space] v = ":review"`.
+  A row in `keymap/default.rs` would conflict if upstream took the key.
+- **The stream's keys are fixed at first.** They replace commands, not keys, so your bindings for `goto_next_change` and the like still apply.
+  A `[keys.review]` table can come later.
+- **The stream is named `[scratch]`.** `Document::display_name` has no hook, and `[review]` would cost a seam in `document.rs`.
+- **No hunk header rows** (`@@ -a,b +c,d @@`) at first. The gutter's old and new numbers already place each hunk. A toggle, like Hunk's `m`, can come later.
+
+## 9. Reuse from diff review
+
+From the `archive/diff-review` tag, restored with `git checkout archive/diff-review -- <path>` when a phase needs them:
+
+- `helix-term/src/ui/text_decorations/diff/words.rs`: word diff, phase 4.
+- The base parse cache in `helix-term/src/ui/text_decorations/diff.rs` (`InlineDiffState`), phase 5.
+- `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, phase 6.
+- File kinds in `helix-term/src/commands/review.rs` (new, deleted, renamed, conflict), phase 1.
+- The test harness helpers in `helix-term/tests/test/fork_diff/review.rs`: a temporary repository, the idle-timer re-arm.
+
+Findings that still hold, from the old plan (`git show archive/diff-review:fork/diff-review.md`). Section numbers are that plan's:
+
+- Copy out of the diff lock, never hold a `Diff` across a frame (5.1). The stream computes its own hunks, so this only matters if it reads the gutter's diff.
+- The idle timer in the integration test harness needs re-arming (5.2).
+- `git` runs with the `--git-dir` and `--work-tree` gix found, and only in a trusted workspace (5.3).
+
+## Sources
+
+- Hunk: [keyboard and mouse](https://www.hunk.dev/docs/start/keyboard-and-mouse/), [layout and display](https://www.hunk.dev/docs/configure/layout-and-display/), [modem-dev/hunk](https://github.com/modem-dev/hunk)
+- Zed: [Split Diffs are Here](https://zed.dev/blog/split-diffs), [Zed 1.11.3](https://zed.dev/releases/stable/1.11.3), `crates/multi_buffer/src/transaction.rs` in [zed-industries/zed](https://github.com/zed-industries/zed)
+- [helix#15611](https://github.com/helix-editor/helix/issues/15611) and matoous's [`md/multibuffer`](https://github.com/matoous/helix/tree/md/multibuffer) branch
+- [helix#15631](https://github.com/helix-editor/helix/pull/15631) for the `.view` theme scopes
