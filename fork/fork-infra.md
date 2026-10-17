@@ -50,11 +50,12 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | 2 | Done | Give the cycle-changes hook a type alias. | `ui/picker.rs`, with `Patch: changed-files-views`. Workspace clippy passes with `-D warnings`. |
 | 3 | Done | Write down the fork's git rules. | `AGENTS.md`: branches, no contact with upstream, commit style, the `Patch:` trailer, opt-in features. `FORK.md`: branches, setup, build, and `--grep` in place of commit lists. |
 | 4 | Done | Add commit hooks for formatting, clippy, and the Patch trailer. | `tools/fork/hooks/pre-commit` and `commit-msg`, and their setup line in `FORK.md`. |
-| 5 | | Add a land script that gates and fast-forwards fork. | `tools/fork/land.sh`, and the push rule in `AGENTS.md`. |
-| 6 | | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
+| 5 | Done | Add a land script that gates and fast-forwards fork. | `tools/fork/land.sh`, and the push rule in `AGENTS.md`. |
+| 6 | Done | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
 | 7 | | Add the testing and manual-verify guides. | `agents/TESTING.md` and `agents/VERIFY.md`. |
 | 8 | | Add the review guide. | `agents/REVIEW.md`. |
 | 9 | | Add the rebase playbook. | `agents/REBASE.md`. |
+| 10 | | Write down how a plan is split and approved. | `AGENTS.md` §Plans, from koloda's `IMPLEMENTATION-PLAN.md`. |
 
 Next, out of this plan's scope:
 
@@ -72,3 +73,9 @@ Next, out of this plan's scope:
 - `pre-commit` runs `cargo fmt -p` on the touched crates instead of `rustfmt` on the staged files.
   `rustfmt` needs an `--edition`, and `helix-lsp-types` is on 2018 while the rest is on 2021.
   It also formats the modules a file declares, so it reached past the staged files anyway.
+- `land.sh` refuses untracked files except markdown. An untracked source file could let the checks pass on code the commits lack, and draft plans stay in `fork/` untracked.
+- `land.sh` skips upstream's `query-check`, `indent-check`, `highlight-check`, and `theme-check`. They only cover `runtime/`, which no fork feature touches. `HELIX.md` says when to run them.
+- `land.sh --check` passed on the whole stack in TODO.
+- A seam marker names its feature, `// FORK: <slug>`, so dropping a feature can find its seams. No seam had a marker yet, so nothing needed rewriting.
+- `document.rs` joined the hot list: 16 upstream commits in the year to 2026-10-17, as many as `editor.rs`.
+- Item 10 was missing from the first version of this plan. The decisions put koloda's plan rules in `AGENTS.md`, but no item did it.

@@ -90,5 +90,5 @@ The hooks run on commit.
 
 - Status: active.
 - Plan: `fork/fork-infra.md`.
-- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
+- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `agents/`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
 - Drop when: never.

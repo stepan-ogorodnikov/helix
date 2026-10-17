@@ -7,6 +7,7 @@ Hot files:
 - `helix-term/src/commands.rs`
 - `helix-term/src/commands/typed.rs`
 - `helix-view/src/editor.rs`
+- `helix-view/src/document.rs`
 
 A fork feature is opt-in or additive. Upstream defaults and config keep their meaning, so any feature can be dropped. Inside fork code, update the call sites and delete the old code instead of keeping a shim.
 
@@ -30,7 +31,7 @@ The hooks in `tools/fork/hooks` format, run clippy, and check the trailer. Fix w
 
 ## Hooks
 
-Mark each hook with `// FORK:` so a search lists every seam.
+Mark each hook with `// FORK: <slug>`, where the slug names its `FORK.md` entry. `rg 'FORK:'` lists every seam, and `rg 'FORK: <slug>'` one feature's.
 
 A static command stays as a wrapper in `commands.rs`. `static_commands!` binds the function by name in that module. Move the body to `helix-term/src/commands/<name>.rs` and call it from the wrapper. `changed_file_picker` is the example.
 
@@ -47,3 +48,7 @@ Move tests with the body. Remove imports the hot file no longer uses.
 ## Plans
 
 A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the code. Each phase's commit marks the phase done in the plan and records what the work found.
+
+## Guides
+
+- `agents/HELIX.md`: upstream's docs and checks, where code lives, comment tags. Read it before changing Rust code.
