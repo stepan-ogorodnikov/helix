@@ -52,3 +52,5 @@ A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the c
 ## Guides
 
 - `agents/HELIX.md`: upstream's docs and checks, where code lives, comment tags. Read it before changing Rust code.
+- `agents/TESTING.md`: which tests to write, where they go, and how to run them. Read it before writing or changing a test.
+- `agents/VERIFY.md`: how to hand a user-visible change back for a check. Never run `hx` interactively or drive it through a terminal.
