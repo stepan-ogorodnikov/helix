@@ -144,7 +144,12 @@ fn write_picked(
     }
     if written > 0 {
         let scope = stream.scope;
-        read_changes(cx, scope, Some(format!("{verb} {}", changes(written))));
+        read_changes(
+            cx,
+            scope,
+            Some(format!("{verb} {}", changes(written))),
+            None,
+        );
     }
     Ok(written)
 }

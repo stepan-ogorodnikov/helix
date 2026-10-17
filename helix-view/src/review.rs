@@ -14,7 +14,7 @@ use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange};
 
 use crate::editor::Action;
-use crate::{align_view, view, Align, DocumentId, Editor, ViewId};
+use crate::{align_view, current, view, Align, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
 pub(crate) mod gutter;
@@ -484,6 +484,26 @@ fn to_top(editor: &mut Editor, doc: DocumentId) {
         .expect("the stream's buffer is open");
     doc.set_selection(view.id, Selection::point(0));
     align_view(doc, view, Align::Top);
+}
+
+/// Puts the focused view's cursor on the header of `path` in the review it
+/// shows. Returns whether the review has the file.
+pub fn focus_file(editor: &mut Editor, path: &Path) -> bool {
+    let Some(stream) = editor.review.stream_of(view!(editor).doc) else {
+        return false;
+    };
+    let header = stream.rows.iter().position(|row| match row {
+        Row::Header { file } => stream.files[*file].change.path() == path,
+        _ => false,
+    });
+    let Some(row) = header else {
+        return false;
+    };
+    let (view, doc) = current!(editor);
+    let start = doc.text().line_to_char(row);
+    doc.set_selection(view.id, Selection::point(start));
+    align_view(doc, view, Align::Top);
+    true
 }
 
 pub fn set_context(editor: &mut Editor, lines: usize) {

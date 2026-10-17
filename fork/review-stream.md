@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 6c done 2026-10-17. Phase 6d follows without a stop, as the human asked.
+Status: phase 6d done 2026-10-17. The read-only review, phases 1–6, is complete. Editing, phases 7–9, waits for the human to try it.
 
 ## Bottom line
 
@@ -331,7 +331,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 6a. Scopes | Done | Index base, `:review unstaged` and `:review staged` | Actual: about 120, plus 300 ported, plus 100 of tests. | Low: ported code |
 | 6b. Staging | Done | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported. Actual: about 230, of it 130 ported, plus 150 of tests. | Low: ported code |
 | 6c. Restore and context | Done | `:review-restore`, `:review-context` | 150–250. Actual: about 130, plus 110 of tests. | Low |
-| 6d. Picker key | Planned | A changed-files picker key that jumps into the review at the file's header | 50–100 | Low |
+| 6d. Picker key | Done | A changed-files picker key that jumps into the review at the file's header | 50–100. Actual: about 80, plus 20 of tests. | Low |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
 | 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
 | 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
@@ -463,6 +463,14 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
   A file that isn't open gets a buffer in the background. Nothing is saved, and `u` in the file undoes the restore.
 - A staged review refuses it: its new side is the index, and `:unstage-hunk` already takes a hunk back out.
 - The context is a field of the stream. `:review-context` lays the files out again through `update`, so the cursor and opened gaps stay.
+
+### 6.10 Phase 6d: found
+
+- The key is `review_jump` on `Alt-r`, unused in pickers and in the prompt, as diff review had it. Other pickers pass it to the prompt, like `cycle_changes`.
+- The picker hands the jump its current list, so the unstaged list jumps into an `unstaged` review. A review of that scope that has the file only moves the cursor. Anything else reads the list's changes first, then puts the cursor on the header.
+- The hook sits next to `changed-files-views`' `on_cycle_changes` in `ui/picker.rs`: a type alias, a field, its default, a builder, and a match arm.
+  `picker_keys.rs` and `changed_file.rs` belong to other fork features. This feature adds a variant to the first and a hook call to the second.
+- The picker walks the working directory, which the tests can't change, so the key has no end-to-end test. `focus_file` has one.
 
 ## 7. Risks
 

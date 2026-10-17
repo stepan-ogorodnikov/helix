@@ -22,6 +22,9 @@ pub enum PickerCommand {
     /// Cycle the changed-file picker: unstaged, staged, then both.
     /// Other pickers pass this key through to the prompt.
     CycleChanges,
+    /// Jump from the changed-file picker into the review, at the selected
+    /// file. Other pickers pass this key through to the prompt.
+    ReviewJump,
     Nop,
 }
 
@@ -41,6 +44,7 @@ impl PickerCommand {
             "toggle_preview" => Self::TogglePreview,
             "close" => Self::Close,
             "cycle_changes" => Self::CycleChanges,
+            "review_jump" => Self::ReviewJump,
             "nop" => Self::Nop,
             _ => return None,
         })
@@ -104,6 +108,13 @@ pub fn default_picker_keys() -> HashMap<KeyEvent, PickerCommand> {
         KeyCode::Char('g'),
         ctrl,
         PickerCommand::CycleChanges,
+    );
+    // Changed-file picker only, like `CycleChanges`.
+    bind(
+        &mut keys,
+        KeyCode::Char('r'),
+        alt,
+        PickerCommand::ReviewJump,
     );
     bind(&mut keys, KeyCode::Esc, none, PickerCommand::Close);
     bind(&mut keys, KeyCode::Char('c'), ctrl, PickerCommand::Close);

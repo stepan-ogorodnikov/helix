@@ -2,7 +2,7 @@
 //! live in `helix_view::review`. This module lists the changed files, reads
 //! both sides of each, and opens a row's file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context as _};
 use helix_core::command_line::Args;
@@ -54,7 +54,7 @@ pub(super) fn review(
         (Some((doc, open)), scope) if scope.is_none_or(|scope| scope == open) => {
             cx.editor.switch(doc, Action::Replace)
         }
-        (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All), None),
+        (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All), None, None),
     }
     Ok(())
 }
@@ -73,7 +73,7 @@ pub(super) fn review_refresh(
 ) -> anyhow::Result<()> {
     if event == PromptEvent::Validate {
         let scope = open_stream(cx.editor).map_or(ChangeView::All, |stream| stream.scope);
-        read_changes(cx, scope, None);
+        read_changes(cx, scope, None, None);
     }
     Ok(())
 }
@@ -110,10 +110,32 @@ fn open_stream(editor: &Editor) -> Option<&Stream> {
         .filter(|stream| editor.documents.contains_key(&stream.doc))
 }
 
+/// The changed-file picker's `review_jump`: the open review at `path`'s header
+/// when it shows `scope`'s changes and has the file, or else a new read of
+/// `scope`'s changes, then the header.
+pub(super) fn jump(cx: &mut compositor::Context, scope: ChangeView, path: &Path) {
+    if let Some(doc) = open_stream(cx.editor)
+        .filter(|stream| stream.scope == scope)
+        .map(|stream| stream.doc)
+    {
+        cx.editor.switch(doc, Action::Replace);
+        if review::focus_file(cx.editor, path) {
+            return;
+        }
+    }
+    read_changes(cx, scope, None, Some(path.to_path_buf()));
+}
+
 /// Lists the `scope` changes of the repository the open review shows, or else
 /// the one that holds the current file, or the working directory for a buffer
-/// with no path. Shows them in the stream, then `done` in the status line.
-fn read_changes(cx: &mut compositor::Context, scope: ChangeView, done: Option<String>) {
+/// with no path. Shows them in the stream, then `done` in the status line, and
+/// puts the cursor on `focus`'s header.
+fn read_changes(
+    cx: &mut compositor::Context,
+    scope: ChangeView,
+    done: Option<String>,
+    focus: Option<PathBuf>,
+) {
     let root = match open_stream(cx.editor) {
         Some(stream) => stream.root.clone(),
         None => doc!(cx.editor)
@@ -166,6 +188,9 @@ fn read_changes(cx: &mut compositor::Context, scope: ChangeView, done: Option<St
             if !empty || editor.review.stream().is_some() {
                 let sections = files.into_iter().map(|file| file.section(editor)).collect();
                 review::show(editor, root, scope, sections);
+                if let Some(path) = focus {
+                    review::focus_file(editor, &path);
+                }
             }
             match (empty, scope, done) {
                 (true, ChangeView::All, _) => editor.set_status("There are no changes to review"),

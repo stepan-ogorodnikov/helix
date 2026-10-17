@@ -899,3 +899,26 @@ async fn review_context_sets_the_lines_around_each_hunk() -> anyhow::Result<()> 
     )
     .await
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn focus_file_puts_the_cursor_on_a_files_header() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    assert!(helix_view::review::focus_file(
+        &mut app.editor,
+        &repo.path().join("b.txt")
+    ));
+    assert_eq!(cursor(&app), (13, 0));
+    assert!(!helix_view::review::focus_file(
+        &mut app.editor,
+        &repo.path().join("c.txt")
+    ));
+    assert_eq!(
+        cursor(&app),
+        (13, 0),
+        "a file the review lacks moves nothing"
+    );
+    Ok(())
+}

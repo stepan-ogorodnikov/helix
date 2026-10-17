@@ -242,6 +242,8 @@ type DynQueryCallback<T, D> =
     fn(&str, &mut Editor, Arc<D>, &Injector<T, D>) -> BoxFuture<'static, anyhow::Result<()>>;
 
 type CycleChangesCallback<T, D> = Box<dyn Fn(&mut Picker<T, D>)>;
+// FORK: review-stream
+type ReviewJumpCallback<T> = Box<dyn Fn(&mut Context, &T)>;
 
 pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     columns: Arc<[Column<T, D>]>,
@@ -269,6 +271,8 @@ pub struct Picker<T: 'static + Send + Sync, D: 'static> {
     /// Handles [`PickerCommand::CycleChanges`]. Absent on pickers that do not
     /// have a change list, which then pass the key to the prompt.
     on_cycle_changes: Option<CycleChangesCallback<T, D>>,
+    // FORK: review-stream
+    on_review_jump: Option<ReviewJumpCallback<T>>,
 
     pub truncate_start: bool,
     /// Caches paths to documents
@@ -399,6 +403,8 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
             default_action: Action::Replace,
             status_label: None,
             on_cycle_changes: None,
+            // FORK: review-stream
+            on_review_jump: None,
             completion_height: 0,
             widths,
             preview_cache: HashMap::new(),
@@ -547,6 +553,12 @@ impl<T: 'static + Send + Sync, D: 'static + Send + Sync> Picker<T, D> {
 
     pub fn with_on_cycle_changes(mut self, cycle: impl Fn(&mut Self) + 'static) -> Self {
         self.on_cycle_changes = Some(Box::new(cycle));
+        self
+    }
+
+    // FORK: review-stream
+    pub fn with_on_review_jump(mut self, jump: impl Fn(&mut Context, &T) + 'static) -> Self {
+        self.on_review_jump = Some(Box::new(jump));
         self
     }
 
@@ -1212,6 +1224,17 @@ impl<I: 'static + Send + Sync, D: 'static + Send + Sync> Component for Picker<I,
                     self.prompt_handle_event(event, ctx);
                 }
             }
+            // FORK: review-stream
+            Some(PickerCommand::ReviewJump) => match (&self.on_review_jump, self.selection()) {
+                (Some(jump), Some(item)) => {
+                    jump(ctx, item);
+                    return close_fn(self);
+                }
+                (Some(_), None) => {}
+                (None, _) => {
+                    self.prompt_handle_event(event, ctx);
+                }
+            },
             // `nop` and unbound keys edit the query.
             Some(PickerCommand::Nop) | None => {
                 self.prompt_handle_event(event, ctx);
