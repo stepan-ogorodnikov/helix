@@ -22,7 +22,12 @@ In a new clone:
 ```sh
 git remote add upstream https://github.com/helix-editor/helix.git
 gh repo set-default stepan-ogorodnikov/helix
+git config core.hooksPath tools/fork/hooks
 ```
+
+The hooks run on commit.
+`pre-commit` formats the crates the staged Rust files belong to, and runs clippy on them.
+`commit-msg` checks the `Patch:` trailer on `fork`.
 
 ## Build
 
@@ -85,5 +90,5 @@ gh repo set-default stepan-ogorodnikov/helix
 
 - Status: active.
 - Plan: `fork/fork-infra.md`.
-- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`. All fork-owned. Upstream has never had these paths.
+- Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `tools/fork/hooks/`. All fork-owned. Upstream has never had these paths.
 - Drop when: never.

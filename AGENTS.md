@@ -24,6 +24,8 @@ Write the subject in the imperative and in sentence case, end it with a period, 
 
 End every commit on `fork` with one `Patch: <slug>` trailer, where the slug names a `FORK.md` entry. A commit serves one feature, so the feature can be dropped by its commits. `git log master..fork --grep '^Patch: <slug>$'` lists them.
 
+The hooks in `tools/fork/hooks` format, run clippy, and check the trailer. Fix what they report instead of committing with `--no-verify`.
+
 ## Hooks
 
 Mark each hook with `// FORK:` so a search lists every seam.

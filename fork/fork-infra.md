@@ -49,7 +49,7 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | 1 | Done | Add the fork infrastructure plan. | This file. |
 | 2 | Done | Give the cycle-changes hook a type alias. | `ui/picker.rs`, with `Patch: changed-files-views`. Workspace clippy passes with `-D warnings`. |
 | 3 | Done | Write down the fork's git rules. | `AGENTS.md`: branches, no contact with upstream, commit style, the `Patch:` trailer, opt-in features. `FORK.md`: branches, setup, build, and `--grep` in place of commit lists. |
-| 4 | | Add commit hooks for formatting, clippy, and the Patch trailer. | `tools/fork/hooks/pre-commit` and `commit-msg`, and their setup line in `FORK.md`. |
+| 4 | Done | Add commit hooks for formatting, clippy, and the Patch trailer. | `tools/fork/hooks/pre-commit` and `commit-msg`, and their setup line in `FORK.md`. |
 | 5 | | Add a land script that gates and fast-forwards fork. | `tools/fork/land.sh`, and the push rule in `AGENTS.md`. |
 | 6 | | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
 | 7 | | Add the testing and manual-verify guides. | `agents/TESTING.md` and `agents/VERIFY.md`. |
@@ -69,3 +69,6 @@ Next, out of this plan's scope:
 - `git log --grep '^Patch: <slug>$'` matches only the trailer line, because `--grep` anchors at line boundaries.
 - Item 2's commit carries `Patch: changed-files-views`, so item 3 marked it done here.
 - Ledger entries became `###` headings under `## Patches`, so the branch, setup, and build sections sit beside them.
+- `pre-commit` runs `cargo fmt -p` on the touched crates instead of `rustfmt` on the staged files.
+  `rustfmt` needs an `--edition`, and `helix-lsp-types` is on 2018 while the rest is on 2021.
+  It also formats the modules a file declares, so it reached past the staged files anyway.

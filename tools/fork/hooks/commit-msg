@@ -1,0 +1,23 @@
+#!/bin/sh
+# Wired through core.hooksPath (FORK.md, Setup).
+#
+# On fork, every commit carries exactly one `Patch: <slug>` trailer, and the
+# staged FORK.md has a `### <slug>` entry. tools/fork/land.sh checks the whole
+# stack again.
+# Escape hatch: git commit --no-verify (land still rejects the stack).
+
+branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
+[ "$branch" = fork ] || exit 0
+
+slugs=$(git interpret-trailers --parse "$1" | sed -n 's/^Patch: *//p')
+if [ "$(printf '%s' "$slugs" | grep -c .)" -ne 1 ]; then
+  echo "commit-msg: commits on fork need exactly one 'Patch: <slug>' trailer." >&2
+  exit 1
+fi
+
+# WHY: the index, not the working tree, because a feature's first commit adds
+# its entry.
+if ! git show :FORK.md | grep -qxF "### $slugs"; then
+  echo "commit-msg: FORK.md has no '### $slugs' entry." >&2
+  exit 1
+fi

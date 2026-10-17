@@ -1,0 +1,28 @@
+#!/bin/sh
+# Wired through core.hooksPath (FORK.md, Setup).
+#
+# Formats the crates that staged Rust files belong to, folds the fixes into the
+# commit, then runs clippy on those crates. tools/fork/land.sh runs the
+# workspace checks before anything is pushed.
+# Escape hatch: git commit --no-verify.
+
+staged() {
+  git diff --cached --name-only --diff-filter=d -z -- '*.rs'
+}
+
+crates=$(staged | xargs -0 -r -n1 dirname | cut -d/ -f1 | sort -u |
+  while read -r dir; do
+    [ -f "$dir/Cargo.toml" ] && sed -n 's/^name = "\(.*\)"/\1/p' "$dir/Cargo.toml" | head -n1
+  done)
+[ -n "$crates" ] || exit 0
+
+packages=$(printf -- '-p %s ' $crates)
+
+# WHY: cargo fmt formats working-tree content, so a partially staged file
+# brings its unstaged edits into the commit. Format before staging in that case.
+# Re-add only the files that were staged; other files cargo fmt touched stay
+# unstaged.
+cargo fmt $packages || exit 1
+staged | xargs -0 -r git add --
+
+exec cargo clippy $packages --all-targets -- -D warnings
