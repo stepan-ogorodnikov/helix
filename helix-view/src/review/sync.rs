@@ -1,19 +1,22 @@
-//! Keeps the stream read-only and current, and sizes its gutter. Runs before
-//! each frame, so it catches an edit from any source: a key, a typable command,
-//! a paste, a change to a file's buffer.
+//! Forwards the stream's edits to the files, keeps its rows current, and sizes
+//! its gutter. Runs before each key and each frame, so it catches an edit from
+//! any source: a key, a typable command, a paste, a change to a file's buffer.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use helix_core::line_ending::get_line_ending;
 use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
 use helix_vcs::ChangeView;
 
-use super::{update, Content};
+use super::{apply_to_file, forward, update, Content, Row, Stream};
 use crate::document::{from_reader, Mode};
+use crate::editor::Action;
 use crate::tree::Tree;
 use crate::{Document, DocumentId, Editor, ViewId};
 
-pub fn sync(editor: &mut Editor) {
+/// `completing` is whether a completion menu is open.
+pub fn sync(editor: &mut Editor, completing: bool) {
     let Some(doc_id) = editor.review.stream.as_ref().map(|stream| stream.doc) else {
         fit_gutters(editor);
         return;
@@ -24,9 +27,17 @@ pub fn sync(editor: &mut Editor) {
         return;
     }
 
-    let refused = put_back(editor, doc_id);
-    let followed = follow_sources(editor, doc_id);
-    if refused || followed {
+    let taken = take_edits(editor, doc_id);
+    let mut moved = taken.is_some();
+    // WHY: a completion's preview restores a savepoint, which reverts every
+    // edit since, a relayout too. A removed row it brought back would read as
+    // text inserted into the file. The rows wait until the menu closes.
+    if !completing {
+        moved |= follow_sources(editor, doc_id);
+        moved |= relayout(editor);
+    }
+    commit_files(editor, doc_id);
+    if moved {
         let scrolloff = editor.config().scrolloff;
         let focus = editor.tree.focus;
         if editor.tree.get(focus).doc == doc_id {
@@ -37,15 +48,217 @@ pub fn sync(editor: &mut Editor) {
                 .ensure_cursor_in_view(doc, scrolloff);
         }
     }
-    if refused {
-        self::refused(editor);
+    if let Some(Err(message)) = taken {
+        editor.set_status(message);
     }
     save_selections(editor, doc_id);
     fit_gutters(editor);
 }
 
-pub(super) fn refused(editor: &mut Editor) {
-    editor.set_status("The review is read-only. ret opens the file.");
+/// The focused view if it shows `doc`, or else any view that does.
+pub(super) fn view_of(editor: &Editor, doc: DocumentId) -> Option<ViewId> {
+    let focus = editor.tree.get(editor.tree.focus);
+    std::iter::once(focus)
+        .chain(editor.tree.views().map(|(view, _)| view))
+        .find(|view| view.doc == doc)
+        .map(|view| view.id)
+}
+
+/// Forwards the stream's edits since the last sync to the files' buffers, or
+/// puts them back and says why. `None` when there were none.
+fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), String>> {
+    let stream = editor.review.stream.as_ref()?;
+    if editor.documents.get(&doc_id)?.version() == stream.version {
+        return None;
+    }
+    let staged = stream.scope == ChangeView::Staged;
+    let refuse = |editor: &mut Editor, message: &str| {
+        put_back(editor, doc_id);
+        Some(Err(message.to_string()))
+    };
+    if staged {
+        return refuse(editor, "A staged review is read-only. ret opens the file.");
+    }
+    // INVARIANT: the buffer's history is committed through a view of it.
+    let Some(view) = view_of(editor, doc_id) else {
+        return refuse(editor, "The edit was put back");
+    };
+
+    // WHY: the history holds exactly the edits since the last sync, which
+    // cleared it. A diff of the text can't tell a deleted row from an equal
+    // removed row next to it.
+    let doc = editor.documents.get_mut(&doc_id).expect("checked above");
+    doc.append_changes_to_history(editor.tree.get_mut(view));
+    let Some(edit) = doc.history.get_mut().changes_since(0) else {
+        // WHY: an edit undone before the sync leaves nothing to forward.
+        settle(doc, &mut editor.tree, view);
+        let version = doc.version();
+        editor
+            .review
+            .stream
+            .as_mut()
+            .expect("checked above")
+            .version = version;
+        return None;
+    };
+    let stream = editor.review.stream.as_ref().expect("checked above");
+    let edits = match forward::edits(stream, edit.changes()) {
+        Ok(edits) => edits,
+        Err(refusal) => return refuse(editor, refusal.message()),
+    };
+
+    let files: Vec<Edited> = edits
+        .iter()
+        .map(|edit| {
+            let file = &stream.files[edit.file];
+            let Content::Text { source, .. } = &file.content else {
+                unreachable!("only a text file has rows to edit");
+            };
+            Edited {
+                path: file.change.path().to_path_buf(),
+                seen: file.seen,
+                source: source.clone(),
+            }
+        })
+        .collect();
+    let docs = match buffers(editor, files) {
+        Ok(docs) => docs,
+        Err(message) => return refuse(editor, &message),
+    };
+
+    for (edit, doc) in edits.iter().zip(&docs) {
+        let doc = editor.documents.get_mut(doc).expect("found above");
+        let transaction = Transaction::change(doc.text(), edit.changes.iter().cloned());
+        apply_to_file(doc, view, &transaction);
+    }
+    let doc = editor.documents.get_mut(&doc_id).expect("checked above");
+    settle(doc, &mut editor.tree, view);
+    let (text, version) = (doc.text().clone(), doc.version());
+    let sources: Vec<_> = docs
+        .iter()
+        .map(|id| {
+            let doc = &editor.documents[id];
+            (doc.id(), doc.version(), doc.text().clone())
+        })
+        .collect();
+
+    let stream = editor.review.stream.as_mut().expect("checked above");
+    stream.ranges.map(edit.changes());
+    stream.text = text;
+    stream.version = version;
+    for (edit, (id, version, text)) in edits.iter().zip(sources) {
+        let file = &mut stream.files[edit.file];
+        if let Content::Text { source, .. } = &mut file.content {
+            *source = text;
+        }
+        // WHY: the relayout compares the file with itself, so it keeps the
+        // parse and hunks of the old text unless they go here.
+        file.trees.source = Default::default();
+        file.hunks = Default::default();
+        file.seen = Some((id, version));
+        if !stream.pending.iter().any(|&(doc, _)| doc == id) {
+            stream.pending.push((id, view));
+        }
+    }
+    stream.relayout = true;
+    // INVARIANT: the forwarded edit made each file what its rows show.
+    debug_assert!(rows_match_sources(stream));
+    Some(Ok(()))
+}
+
+/// A file an edit goes to, and what its rows came from.
+struct Edited {
+    path: PathBuf,
+    seen: Option<(DocumentId, i32)>,
+    source: Rope,
+}
+
+/// The buffer of each edited file, loaded if it isn't open, or why the edit
+/// can't go to one.
+fn buffers(editor: &mut Editor, files: Vec<Edited>) -> Result<Vec<DocumentId>, String> {
+    let mut docs = Vec::with_capacity(files.len());
+    for Edited { path, seen, source } in files {
+        let shown = helix_stdx::path::get_relative_path(&path);
+        let doc = match editor.document_by_path(&path) {
+            Some(doc) if Some((doc.id(), doc.version())) == seen => doc.id(),
+            // WHY: the rows came from an older version of the buffer, so the
+            // edit's places in it are stale.
+            Some(_) => {
+                return Err(format!(
+                    "{} changed, so the edit was put back",
+                    shown.display()
+                ))
+            }
+            None => match editor.open(&path, Action::Load) {
+                Ok(doc) if *editor.documents[&doc].text() == source => doc,
+                Ok(_) => {
+                    return Err(format!(
+                        "{} changed on disk, so the edit was put back",
+                        shown.display()
+                    ))
+                }
+                Err(err) => return Err(format!("Failed to open {}: {err}", shown.display())),
+            },
+        };
+        docs.push(doc);
+    }
+    Ok(docs)
+}
+
+fn rows_match_sources(stream: &Stream) -> bool {
+    stream.rows.iter().enumerate().all(|(row, kind)| {
+        let (Row::Context { file, source, .. } | Row::Added { file, source }) = *kind else {
+            return true;
+        };
+        let Content::Text { source: rope, .. } = &stream.files[file].content else {
+            return false;
+        };
+        let (shown, line) = (stream.text.line(row), rope.line(source));
+        match get_line_ending(&line) {
+            Some(_) => shown == line,
+            // WHY: a last line with no line ending shows one.
+            None => {
+                shown.len_chars() == line.len_chars() + 1 && shown.slice(..line.len_chars()) == line
+            }
+        }
+    })
+}
+
+fn relayout(editor: &mut Editor) -> bool {
+    let Some(stream) = editor
+        .review
+        .stream
+        .as_ref()
+        .filter(|stream| stream.relayout)
+    else {
+        return false;
+    };
+    let files = stream.files.clone();
+    update(editor, files, None);
+    true
+}
+
+// WHY: one command in the review, or one insert session, is one undo step in
+// each file it edited.
+fn commit_files(editor: &mut Editor, doc_id: DocumentId) {
+    let focus = editor.tree.focus;
+    if editor.mode == Mode::Insert && editor.tree.get(focus).doc == doc_id {
+        return;
+    }
+    let Some(stream) = editor.review.stream.as_mut() else {
+        return;
+    };
+    for (doc, view) in std::mem::take(&mut stream.pending) {
+        let Some(doc) = editor.documents.get_mut(&doc) else {
+            continue;
+        };
+        let view = match editor.tree.contains(view) {
+            true => view,
+            false => focus,
+        };
+        doc.ensure_view_init(view);
+        doc.append_changes_to_history(editor.tree.get_mut(view));
+    }
 }
 
 pub(super) fn save_selections(editor: &mut Editor, doc_id: DocumentId) {
@@ -63,12 +276,17 @@ pub(super) fn save_selections(editor: &mut Editor, doc_id: DocumentId) {
 }
 
 pub(super) fn put_back(editor: &mut Editor, doc_id: DocumentId) -> bool {
-    let mut refused = false;
+    let (Some(stream), Some(doc)) = (editor.review.stream.as_ref(), editor.documents.get(&doc_id))
+    else {
+        return false;
+    };
+    if doc.version() == stream.version {
+        return false;
+    }
     if editor.mode == Mode::Insert && editor.tree.get(editor.tree.focus).doc == doc_id {
         // INVARIANT: before the text is restored. Leaving insert mode can
         // edit the buffer, to drop the indent of an empty line.
         editor.enter_normal_mode();
-        refused = true;
     }
 
     let (Some(stream), Some(doc)) = (
@@ -77,14 +295,8 @@ pub(super) fn put_back(editor: &mut Editor, doc_id: DocumentId) -> bool {
     ) else {
         return false;
     };
-    if doc.version() != stream.version {
-        let transaction = compare_ropes(doc.text(), &stream.text);
-        doc.apply(&transaction, editor.tree.focus);
-        refused = true;
-    }
-    if !refused {
-        return false;
-    }
+    let transaction = compare_ropes(doc.text(), &stream.text);
+    doc.apply(&transaction, editor.tree.focus);
 
     let mut shown_in = None;
     for (view, _) in editor.tree.views() {

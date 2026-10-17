@@ -148,7 +148,7 @@ fn cursor(app: &Application) -> (usize, usize) {
 const TEN: &str = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n";
 
 #[tokio::test(flavor = "multi_thread")]
-async fn review_shows_every_changed_file_in_one_read_only_buffer() -> anyhow::Result<()> {
+async fn review_shows_every_changed_file_in_one_buffer() -> anyhow::Result<()> {
     let repo = repo(
         &[("a.txt", TEN), ("gone.txt", "old\n")],
         &[
@@ -182,7 +182,7 @@ async fn review_shows_every_changed_file_in_one_read_only_buffer() -> anyhow::Re
                 )
             );
             let doc = doc!(app.editor);
-            assert!(doc.readonly);
+            assert!(!doc.readonly, "only a staged review shows as read-only");
             assert!(!doc.is_modified());
             assert_eq!(
                 view!(app.editor).gutters.line_numbers.min_width,
@@ -241,9 +241,10 @@ async fn review_says_when_nothing_changed() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn edits_in_the_review_are_put_back() -> anyhow::Result<()> {
+async fn edits_outside_a_files_lines_are_put_back() -> anyhow::Result<()> {
     let repo = repo(&[("a.txt", TEN)], &[("a.txt", Some("1\n2\nthree\n4\n"))]);
-    let mut app = app_on(repo.path().join("a.txt"))?;
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
     start_review(&mut app).await?;
     let before = stream_text(&app);
     let unchanged = |app: &Application| {
@@ -251,6 +252,7 @@ async fn edits_in_the_review_are_put_back() -> anyhow::Result<()> {
         assert_eq!(stream_text(app), before);
         assert!(!doc!(app.editor).is_modified());
         assert_eq!(app.editor.mode, Mode::Normal);
+        assert_eq!(buffer_text(app, &file).as_deref(), Some("1\n2\nthree\n4\n"));
     };
 
     test_key_sequences(
@@ -261,7 +263,10 @@ async fn edits_in_the_review_are_put_back() -> anyhow::Result<()> {
                 Some(&|app| {
                     unchanged(app);
                     assert_eq!(selected(app), "3\n", "the selection comes back");
-                    assert_eq!(status(app), "The review is read-only. ret opens the file.");
+                    assert_eq!(
+                        status(app),
+                        "Removed lines, headers, and gaps can't be edited"
+                    );
                 }),
             ),
             (
@@ -271,9 +276,170 @@ async fn edits_in_the_review_are_put_back() -> anyhow::Result<()> {
                     assert_eq!(status(app), "Already at oldest change");
                 }),
             ),
-            (Some("ihello"), Some(&unchanged)),
-            (Some("<esc>:line-ending crlf<ret>"), Some(&unchanged)),
+            (Some("ih"), Some(&unchanged)),
+            (Some(":line-ending crlf<ret>"), Some(&unchanged)),
             (Some("ra"), Some(&unchanged)),
+            (Some("ggih"), Some(&unchanged)),
+            (
+                Some("/three<ret>o"),
+                Some(&|app| {
+                    unchanged(app);
+                    assert_eq!(status(app), "The review can't add or remove lines yet");
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn typing_in_a_row_edits_the_files_buffer_and_the_rows_follow() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    let original = "1\n2\n3\n4\n5\n6\nseven\n8\n9\n10\n";
+    let edited = |app: &Application| {
+        assert_eq!(
+            buffer_text(app, &file).as_deref(),
+            Some("1\n2\n3\n4\n5xy\n6\nseven\n8\n9\n10\n")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            original,
+            "and doesn't save it"
+        );
+        assert!(in_stream(app));
+        assert_eq!(
+            stream_text(app),
+            review_of(
+                &file,
+                "⋯ 1 unchanged line\n2\n3\n4\n5\n5xy\n6\n7\nseven\n8\n9\n10\n"
+            ),
+            "the edited line gets its old version above it"
+        );
+        assert_eq!(cursor(app).0, 6, "the cursor stays on the edited line");
+        assert!(!doc!(app.editor).is_modified());
+    };
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/^5<ret>Axy"),
+                Some(&|app| {
+                    edited(app);
+                    assert_eq!(app.editor.mode, Mode::Insert, "while you type");
+                }),
+            ),
+            (Some("<esc>"), Some(&edited)),
+            (
+                Some("<ret>u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some(original));
+                    assert_eq!(
+                        cursor(app),
+                        (4, 1),
+                        "one insert is one undo step, and it puts the cursor where the edit was"
+                    );
+                }),
+            ),
+            (
+                Some("<C-o>"),
+                Some(&|app| {
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(&file, "⋯ 3 unchanged lines\n4\n5\n6\n7\nseven\n8\n9\n10\n")
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_edit_loads_a_file_that_isnt_open() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let b = repo.path().join("b.txt");
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("/^B<ret>iX<esc>"),
+        Some(&|app| {
+            assert_eq!(buffer_text(app, &b).as_deref(), Some("XB\n"));
+            let doc = app.editor.document_by_path(&b).unwrap();
+            assert!(doc.is_modified());
+            assert!(
+                app.editor
+                    .tree
+                    .views()
+                    .all(|(view, _)| view.doc != doc.id()),
+                "in the background"
+            );
+            assert_eq!(std::fs::read_to_string(&b).unwrap(), "B\n");
+            assert!(stream_text(app).ends_with("b.txt  modified\nb\nXB\n"));
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
+    let repo = tempfile::tempdir()?;
+    git(repo.path(), &["init", "--quiet"]);
+    let dir = repo.path().join("files");
+    std::fs::create_dir(&dir)?;
+    std::fs::write(dir.join("only.txt"), "")?;
+    let file = repo.path().join("a.txt");
+    let line = format!("{}/", dir.display());
+    std::fs::write(&file, format!("{line}\nold\n"))?;
+    git(repo.path(), &["add", "--all"]);
+    git(repo.path(), &["commit", "--quiet", "--message", "base"]);
+    std::fs::write(&file, format!("{line}\nnew\n"))?;
+
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    let completed = format!("{line}only.txt\nnew\n");
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (Some("jA<C-x>"), None),
+            (
+                Some("<C-n>"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file), Some(completed.clone()));
+                }),
+            ),
+            (
+                Some("<ret>"),
+                Some(&|app| {
+                    assert_eq!(
+                        app.editor.mode,
+                        Mode::Insert,
+                        "the completion isn't put back: {}",
+                        status(app)
+                    );
+                    assert_eq!(buffer_text(app, &file), Some(completed.clone()));
+                }),
+            ),
+            (
+                Some("<esc>"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file), Some(completed.clone()));
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(&file, &format!("{line}\nold\n{line}only.txt\nnew\n")),
+                        "the rows follow once the menu closes"
+                    );
+                }),
+            ),
         ],
         false,
     )
@@ -631,6 +797,38 @@ async fn review_scopes_diff_head_the_index_and_the_files() -> anyhow::Result<()>
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_staged_review_takes_no_edits() -> anyhow::Result<()> {
+    let repo = staged_and_unstaged();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    run_until(&mut app, ":review staged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+    let before = stream_text(&app);
+
+    test_key_sequence(
+        &mut app,
+        Some("/two<ret>ix"),
+        Some(&|app| {
+            assert_eq!(stream_text(app), before);
+            assert_eq!(app.editor.mode, Mode::Normal);
+            assert!(doc!(app.editor).readonly);
+            assert_eq!(
+                status(app),
+                "A staged review is read-only. ret opens the file."
+            );
+            assert_eq!(
+                buffer_text(app, &file).as_deref(),
+                Some("1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n")
+            );
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_staged_review_ignores_edits_to_the_file() -> anyhow::Result<()> {
     let repo = staged_and_unstaged();
     let file = repo.path().join("a.txt");
@@ -828,6 +1026,20 @@ async fn review_restore_puts_the_base_back_in_each_buffer() -> anyhow::Result<()
                         "only the selected hunk"
                     );
                     assert!(app.editor.document_by_path(&a).unwrap().is_modified());
+                }),
+            ),
+            (
+                Some("/^4<ret><ret>u"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &a).as_deref(),
+                        Some("1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n")
+                    );
+                    assert_eq!(
+                        cursor(app),
+                        (8, 0),
+                        "u in the file goes to the restored hunk"
+                    );
                 }),
             ),
         ],

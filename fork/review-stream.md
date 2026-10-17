@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 7 planned 2026-10-18, as 7a–7d (6.11). The read-only review, phases 1–6, is complete, and the human tried it. Phase 7 waits for approval.
+Status: phase 7a done 2026-10-18. The read-only review, phases 1–6, is complete, and edits within a line reach the files. Phases 7b–7d are next.
 
 ## Bottom line
 
@@ -346,7 +346,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 6c. Restore and context | Done | `:review-restore`, `:review-context` | 150–250. Actual: about 130, plus 110 of tests. | Low |
 | 6d. Picker key | Done | A changed-files picker key that jumps into the review at the file's header | 50–100. Actual: about 80, plus 20 of tests. | Low |
 | **Editing, if it works out** | | | **0.9–1.5k** | |
-| 7a. In-line edits | Planned | An edit inside a line of an added or context row reaches the file's buffer, loaded if need be, and the rows relayout live. Capture, the `handle_event` sync, the check, forwarding, commits, the hold under a completion menu. Edits that add or remove a line are refused. | 300–450 | **High**: the engine |
+| 7a. In-line edits | Done | An edit inside a line of an added or context row reaches the file's buffer, loaded if need be, and the rows relayout live. Capture, the `handle_event` sync, the check, forwarding, commits, the hold under a completion menu. Edits that add or remove a line are refused. | 300–450. Actual: about 360, plus 340 of tests. | **High**: the engine |
 | 7b. Line edits | Planned | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400 | Medium: the rules at run edges |
 | 7c. Indent | Planned | The stream takes the indent style of the file under the cursor | 20–50 | Low |
 | 7d. Cleanup | Planned | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60 | Low |
@@ -507,6 +507,28 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
 - Each relayout diffs every file and finds the changed words of every hunk again. 7a measures a keystroke in a large review, and keeps each untouched file's hunks if it's slow.
 - `:review-restore` commits with the stream view's selection in the file. `Action::Load` puts that at the file's start, so `u` in the file likely moves the cursor there.
   7a checks it, and fixes it with the helper that sets the selection at the edit.
+
+### 6.12 Phase 7a: found
+
+- The capture works as planned: commit the stream's pending changes, then read `changes_since(0)`. An edit undone before the sync leaves no changeset, so the sync only settles.
+- `put_back` left insert mode whenever the stream was in it. Phase 1 wanted that, since entering insert mode was already refused.
+  Every relayout calls it, so one typed char dropped you into normal mode, and the next key ran as a command. It now leaves insert mode only to put an edit back.
+- A refusal still leaves insert mode, so the rest of what you type runs as normal-mode keys, as in phase 1. `ihello` on a removed row moves the cursor with `e`, `l`, `l`, and opens a line with `o`.
+- Upstream clears the status on every key. A refusal found by the sync at the start of `handle_event` is cleared by that same key.
+  In use, each key is followed by a frame, whose sync finds the edit first, so the message shows. A refusal inside a macro shows none.
+- A forwarded edit is committed to the file's history outside insert mode, so an insert session is one undo step. The test types two chars and undoes both with one `u`.
+- `:review-restore`'s cursor bug was real: `u` in the restored file put the cursor at the top. `apply_to_file` sets the selection at the first change, for restore and forwarding both.
+- An open file is checked by version, since its rows came from that version. A file the edit loads is checked by text.
+- While a completion menu holds the reconcile, the rows' kinds lag: an edited unchanged line shows no sign until the menu closes. The ranges move through the edit, so tints stay on their rows.
+- Accepting a completion forwards a replace of the preview by the same text. The file gets a change that changes nothing.
+- The completion test uses path completion. Upstream's test config turns word completion off, since its hook leaks between tests.
+  Without the hold, accepting the item is refused and you leave insert mode, which is what the test checks.
+- Cost of one relayout, release build, measured on made-up files:
+  - Before: laying out 200 files of 2,000 lines (9,400 rows) took 124 ms, nearly all of it diffing every file again. 50 files of 500 lines took 8 ms.
+  - Each file now keeps its hunks while neither side changes. A key in the 200-file review costs 27 ms in all, 5 ms of it the layout. 500 files cost 59 ms.
+  - The rest is whole-stream work: reconcile, the ranges and their changed words, and the line maps. Limiting it to the edited file's rows is the next step, if that's slow in use.
+- `update` kept a passed-in file's parse when that side's text changed. `follow_sources` passes clones, so a buffer that closed was highlighted with its old parse until something else changed. A changed side now starts over, for parses and hunks both.
+- Only a staged review sets `readonly`, so only it shows as read-only in the statusline.
 
 ## 7. Risks
 

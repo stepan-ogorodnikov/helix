@@ -464,14 +464,16 @@ you to selectively add search terms to your selections.
 
 ## Review
 
-`:review` shows the changes of every changed file in one read-only buffer, diffed against `HEAD`.
+`:review` shows the changes of every changed file in one buffer, diffed against `HEAD`.
 `:review unstaged` diffs the index against the files instead, and `:review staged` diffs `HEAD` against the index, which a staged review never takes from a file's buffer. `:review all` is the default.
 `:stage-hunk` and `:unstage-hunk` write every hunk the selections touch to the index, whole, and read the review again. They run `git`, so they need a [trusted workspace](./workspace-trust.md).
 `:review-restore` puts the base's text back over those hunks in each file's buffer, unsaved, so `u` in the file undoes it. `:review-context <n>` shows `n` unchanged lines around each hunk, 3 at first.
 Each file starts with a row naming it and how it changed. Its hunks follow with 3 lines of context, and a row counts the unchanged lines left out between them.
 The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
 
-Normal and select mode keys work in the review, but an edit is put back.
+An edit to an added or unchanged line goes to the file's buffer as you type, and the rows follow it: an edited line gets its old version above it.
+A file that isn't open gets a buffer in the background. Nothing is saved until you write it, with `:wa` for example, and `u` in the file undoes the edit.
+An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is an edit that adds or removes a line. A staged review takes no edits.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
 With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review swaps these commands for its own, on whatever keys they're bound to:

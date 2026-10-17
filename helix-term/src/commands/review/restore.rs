@@ -7,7 +7,7 @@ use helix_core::command_line::Args;
 use helix_core::Transaction;
 use helix_vcs::ChangeView;
 use helix_view::editor::Action;
-use helix_view::review::layout;
+use helix_view::review::{self, layout};
 use helix_view::{current_ref, Editor};
 
 use super::open_stream;
@@ -94,8 +94,7 @@ fn restore(
         )
     });
     let transaction = Transaction::change(&text, changes);
-    doc.ensure_view_init(focus);
-    doc.apply(&transaction, focus);
+    review::apply_to_file(doc, focus, &transaction);
     doc.append_changes_to_history(editor.tree.get_mut(focus));
     Ok(picked.len())
 }

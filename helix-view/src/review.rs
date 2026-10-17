@@ -1,22 +1,25 @@
-//! The review stream: one read-only scratch buffer that shows the hunks of
-//! every changed file, one row per line.
+//! The review stream: one scratch buffer that shows the hunks of every changed
+//! file, one row per line. An edit to an added or unchanged line goes to the
+//! file's buffer, and anything else is put back.
 //!
 //! `helix-term` lists the changed files and reads both sides of each. This
-//! module lays out the rows, owns the buffer's text, and keeps it read-only.
+//! module lays out the rows, owns the buffer's text, and forwards its edits.
 
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use helix_core::encoding::Encoding;
-use helix_core::Language;
 use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
-use helix_vcs::{ChangeView, FileChange};
+use helix_core::{Assoc, ChangeSet, Language, Transaction};
+use helix_vcs::{ChangeView, FileChange, Hunk};
 
 use crate::editor::Action;
-use crate::{align_view, current, view, Align, DocumentId, Editor, ViewId};
+use crate::{align_view, current, view, Align, Document, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
+mod forward;
 pub(crate) mod gutter;
 pub mod layout;
 mod reconcile;
@@ -139,6 +142,11 @@ pub struct Stream {
     /// Digits of the widest base and source line numbers.
     widths: [usize; 2],
     pub ranges: Ranges,
+    /// Files' buffers with forwarded changes not yet in their history, and the
+    /// view each was made from.
+    pending: Vec<(DocumentId, ViewId)>,
+    /// Whether an edit was forwarded since the rows were laid out.
+    relayout: bool,
 }
 
 /// The rows of each hunk: a run of removed and added rows.
@@ -199,6 +207,22 @@ impl Ranges {
         }
         ranges
     }
+
+    fn map(&mut self, changes: &ChangeSet) {
+        for list in [
+            &mut self.removed,
+            &mut self.headers,
+            &mut self.gaps,
+            &mut self.words,
+        ] {
+            changes.update_positions(list.iter_mut().flat_map(|range| {
+                [
+                    (&mut range.start, Assoc::After),
+                    (&mut range.end, Assoc::Before),
+                ]
+            }));
+        }
+    }
 }
 
 /// A file of the stream, and what its rows came from.
@@ -213,6 +237,9 @@ struct File {
     opened: Vec<Range<usize>>,
     language: Option<Language>,
     trees: syntax::Trees,
+    /// The hunks of `content`, once laid out. `None` inside when it's too
+    /// large to diff.
+    hunks: OnceLock<Option<Vec<Hunk>>>,
 }
 
 impl From<Section> for File {
@@ -225,6 +252,7 @@ impl From<Section> for File {
             opened: Vec::new(),
             language: None,
             trees: syntax::Trees::default(),
+            hunks: OnceLock::new(),
         }
     }
 }
@@ -363,15 +391,17 @@ fn layout(files: &[File], context: usize) -> Layout {
     for (index, file) in files.iter().enumerate() {
         let (body, note) = match &file.content {
             Content::Binary => (Vec::new(), Some("binary")),
-            Content::Text { base, source } => match layout::hunks(base, source) {
-                None => (Vec::new(), Some("too large to diff")),
-                Some(hunks) if hunks.is_empty() => (Vec::new(), Some("no text changes")),
-                Some(hunks) => {
-                    let lines = layout::line_count(source);
-                    let rows = layout::rows(index, &hunks, lines, context, &file.opened);
-                    (rows, None)
+            Content::Text { base, source } => {
+                match file.hunks.get_or_init(|| layout::hunks(base, source)) {
+                    None => (Vec::new(), Some("too large to diff")),
+                    Some(hunks) if hunks.is_empty() => (Vec::new(), Some("no text changes")),
+                    Some(hunks) => {
+                        let lines = layout::line_count(source);
+                        let rows = layout::rows(index, hunks, lines, context, &file.opened);
+                        (rows, None)
+                    }
                 }
-            },
+            }
         };
 
         text.push_str(&header(&file.change, note));
@@ -448,6 +478,9 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
             stream.scope = scope;
             was_empty = stream.rows.is_empty();
         }
+        if let Some(doc) = editor.documents.get_mut(&doc) {
+            doc.readonly = scope == ChangeView::Staged;
+        }
         update(editor, sections.into_iter().map(File::from).collect(), None);
         // WHY: rows inserted into an empty stream push the cursor past them.
         if was_empty {
@@ -458,7 +491,9 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
 
     let doc_id = editor.new_file(Action::Replace);
     let doc = editor.documents.get_mut(&doc_id).expect("just opened");
-    doc.readonly = true;
+    // WHY: upstream only uses the flag for writes. Here it shows in the
+    // statusline that a staged review takes no edits.
+    doc.readonly = scope == ChangeView::Staged;
     editor.review.stream = Some(Stream {
         doc: doc_id,
         root,
@@ -471,9 +506,23 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         selections: HashMap::new(),
         widths: [1, 1],
         ranges: Ranges::default(),
+        pending: Vec::new(),
+        relayout: false,
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
     to_top(editor, doc_id);
+}
+
+/// Applies `transaction` to a file's buffer from the review's `view`.
+pub fn apply_to_file(doc: &mut Document, view: ViewId, transaction: &Transaction) {
+    doc.ensure_view_init(view);
+    // WHY: `u` in the file puts back the selection this view had in it before
+    // the first change. Left where `Action::Load` put it, that's the file's
+    // start.
+    if let Some((from, ..)) = transaction.changes_iter().next() {
+        doc.set_selection(view, Selection::point(from));
+    }
+    doc.apply(transaction, view);
 }
 
 fn to_top(editor: &mut Editor, doc: DocumentId) {
@@ -535,15 +584,10 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
     // INVARIANT: the transaction below is built on the stream's text, so the
     // buffer has to hold it.
     if sync::put_back(editor, doc_id) {
-        sync::refused(editor);
+        editor.set_status("The edit was put back");
     }
-    let focus = editor.tree.focus;
-    let shown_in = std::iter::once(editor.tree.get(focus))
-        .chain(editor.tree.views().map(|(view, _)| view))
-        .find(|view| view.doc == doc_id)
-        .map(|view| view.id);
     // INVARIANT: the buffer's history is committed through a view of it.
-    let Some(view) = shown_in else {
+    let Some(view) = sync::view_of(editor, doc_id) else {
         return;
     };
     let loader = editor.syn_loader.load();
@@ -595,13 +639,23 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
             _ => (Some(Vec::new()), Some(Vec::new())),
         };
         files[new].opened = layout::map_ranges(&old.opened, source.as_deref());
-        // WHY: a side whose text didn't change keeps its parse.
-        if base.is_none() {
-            files[new].trees.base = old.trees.base.clone();
-        }
-        if source.is_none() {
-            files[new].trees.source = old.trees.source.clone();
-        }
+        // WHY: a side whose text didn't change keeps its parse, and a file
+        // with neither side changed its hunks. Diffing every file again made
+        // each key typed in a large review slow. A changed side starts over:
+        // `files` may be clones that still hold the old ones.
+        let file = &mut files[new];
+        file.trees.base = match base {
+            None => old.trees.base.clone(),
+            Some(_) => Default::default(),
+        };
+        file.trees.source = match source {
+            None => old.trees.source.clone(),
+            Some(_) => Default::default(),
+        };
+        file.hunks = match (&base, &source) {
+            (None, None) => old.hunks.clone(),
+            _ => OnceLock::new(),
+        };
         maps.push(Some((new, base, source)));
     }
     if let Some((file, lines)) = open {
@@ -640,6 +694,7 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
     stream.text = text;
     stream.version = version;
     stream.widths = layout.widths;
+    stream.relayout = false;
     sync::save_selections(editor, doc_id);
 }
 
@@ -739,6 +794,8 @@ mod tests {
             selections: HashMap::new(),
             widths: layout.widths,
             ranges: Ranges::default(),
+            pending: Vec::new(),
+            relayout: false,
         }
     }
 

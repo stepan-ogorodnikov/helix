@@ -1459,6 +1459,7 @@ impl Component for EditorView {
         context: &mut crate::compositor::Context,
     ) -> EventResult {
         // FORK: review-stream
+        helix_view::review::sync(context.editor, self.completion.is_some());
         self.review_keys.swap(&mut self.keymaps, context.editor);
         let mut cx = commands::Context {
             editor: context.editor,
@@ -1625,7 +1626,7 @@ impl Component for EditorView {
 
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
         // FORK: review-stream
-        helix_view::review::sync(cx.editor);
+        helix_view::review::sync(cx.editor, self.completion.is_some());
         // clear with background color
         surface.set_style(area, cx.editor.theme.get("ui.background"));
         let config = cx.editor.config();
