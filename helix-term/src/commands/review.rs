@@ -11,7 +11,7 @@ use helix_loader::workspace_trust::TrustQuery;
 use helix_vcs::{visible_changes, ChangeKind, ChangeView, DiffProviderRegistry, FileChange};
 use helix_view::document::from_reader;
 use helix_view::editor::Action;
-use helix_view::review::{self, Content, Section};
+use helix_view::review::{self, Content, Row, Section};
 use helix_view::{align_view, current, current_ref, doc, Align, Editor};
 
 use super::{push_jump, Context};
@@ -27,13 +27,48 @@ pub(super) fn review(
     if event != PromptEvent::Validate {
         return Ok(());
     }
+    let open = cx
+        .editor
+        .review
+        .stream()
+        .map(|stream| stream.doc)
+        .filter(|doc| cx.editor.documents.contains_key(doc));
+    match open {
+        Some(doc) => cx.editor.switch(doc, Action::Replace),
+        None => read_changes(cx),
+    }
+    Ok(())
+}
 
-    let root = doc!(cx.editor)
-        .path()
-        .and_then(Path::parent)
-        .filter(|dir| dir.is_dir())
-        .map(Path::to_path_buf)
-        .unwrap_or_else(helix_stdx::env::current_working_dir);
+pub(super) fn review_refresh(
+    cx: &mut compositor::Context,
+    _args: Args,
+    event: PromptEvent,
+) -> anyhow::Result<()> {
+    if event == PromptEvent::Validate {
+        read_changes(cx);
+    }
+    Ok(())
+}
+
+/// Lists the changes of the repository the open review shows, or else the one
+/// that holds the current file, or the working directory for a buffer with no
+/// path. Shows them in the stream.
+fn read_changes(cx: &mut compositor::Context) {
+    let open = cx
+        .editor
+        .review
+        .stream()
+        .filter(|stream| cx.editor.documents.contains_key(&stream.doc));
+    let root = match open {
+        Some(stream) => stream.root.clone(),
+        None => doc!(cx.editor)
+            .path()
+            .and_then(Path::parent)
+            .filter(|dir| dir.is_dir())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(helix_stdx::env::current_working_dir),
+    };
     let trust_full = cx
         .editor
         .workspace_trust
@@ -44,7 +79,9 @@ pub(super) fn review(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     providers
         .clone()
-        .for_each_changed_file(root, trust_full, move |change| tx.send(change).is_ok());
+        .for_each_changed_file(root.clone(), trust_full, move |change| {
+            tx.send(change).is_ok()
+        });
     cx.jobs.callback(async move {
         let (mut unstaged, mut staged, mut error) = (Vec::new(), Vec::new(), None);
         while let Some(change) = rx.recv().await {
@@ -66,19 +103,22 @@ pub(super) fn review(
         })
         .await?;
 
-        let show = move |editor: &mut Editor| match error {
-            Some(err) if files.is_empty() => {
-                editor.set_error(format!("Failed to list the changed files: {err}"))
+        let show = move |editor: &mut Editor| {
+            if let (Some(err), true) = (error, files.is_empty()) {
+                editor.set_error(format!("Failed to list the changed files: {err}"));
+                return;
             }
-            _ if files.is_empty() => editor.set_status("There are no changes to review"),
-            _ => {
+            let empty = files.is_empty();
+            if !empty || editor.review.stream().is_some() {
                 let sections = files.into_iter().map(|file| file.section(editor)).collect();
-                review::show(editor, sections);
+                review::show(editor, root, sections);
+            }
+            if empty {
+                editor.set_status("There are no changes to review");
             }
         };
         Ok(Callback::Editor(Box::new(show)))
     });
-    Ok(())
 }
 
 /// The bytes of both sides of a changed file, read off the main thread.
@@ -150,6 +190,10 @@ pub(super) fn open(cx: &mut Context) {
     let text = doc.text().slice(..);
     let cursor = doc.selection(view.id).primary().cursor(text);
     let row = text.char_to_line(cursor);
+    if let Some(Row::Gap { .. }) = stream.rows.get(row) {
+        review::open_gap(cx.editor, row);
+        return;
+    }
     let Some(target) = stream.target(row) else {
         return;
     };

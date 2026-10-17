@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 1 done 2026-10-17. Phase 2 starts when the human asks for it.
+Status: phase 2 done 2026-10-17. Phase 3 starts when the human asks for it.
 
 ## Bottom line
 
@@ -125,7 +125,8 @@ Prior art:
 - **Reconcile** builds the rows a file should have, compares them with its current rows by identity, and applies one transaction to the stream:
   insert and delete rows, and copy source text into rows whose text changed.
   Selections map through it like through any edit, so the cursor stays on its row, in every view of the stream.
-- **Identity, not text.** Rows are matched by `Header(file)`, `Gap(file, next source line)`, `Removed(file, base line)`, and `Editable(file, source line)`.
+- **Identity, not text.** Rows are matched by file and `Key`: `Header`, `Gap(first hidden source line)`, `Removed(base line)`, and `Source(source line)` for context and added rows.
+  The old rows' lines go through a line map of the old text to the new first (6.3).
   A text diff (`helix_core::diff::compare_ropes`) matches equal lines, and diff output often has neighboring lines that are equal (a `}` removed above a `}` kept).
   Matching by text could leave the cursor on the removed row instead of the line it was on.
 - So an edit made after `enter` shows in the stream by the time `C-o` brings you back.
@@ -196,7 +197,7 @@ Everything here builds on phase 2's reconcile. If phase 7's relayout feels wrong
 A file that loads with text different from what the stream showed gets its section rebuilt, and an edit that raced it is refused.
 Closing the stream closes the documents it loaded that are unmodified and shown in no view.
 
-**Capture.** Phase 1's change hook queues `(doc, old_text, changes)` for the stream and its sources, in order, instead of inverses.
+**Capture.** A `DocumentDidChange` hook queues `(doc, old_text, changes)` for the stream and its sources, in order.
 The hook only gets `&mut Document`, so it can't touch the other side itself (the note at `document.rs:223`).
 
 **Sync points**, each with `&mut Editor`:
@@ -323,7 +324,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 0. Plan | Done | Commit this plan and a `review-stream` ledger entry (6.1). | 0 | Low |
 | **Read-only review** | | | **2.5–3.8k** | |
 | 1. Read-only stream | Done | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200. Actual: about 820, plus 580 of tests. | Medium: render seams, row math, the guard |
-| 2. Keep it current | Planned | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500 | **High**: the cursor while rows appear and vanish |
+| 2. Keep it current | Done | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500. Actual: about 400, plus 310 of tests. | **High**: the cursor while rows appear and vanish |
 | 3. Navigation | Planned | Hunk and file motions across files | 150–300 | Low |
 | 4. Look | Planned | Row tints, header and gap decorations, word highlights | 200–400 | Low |
 | 5. Syntax | Planned | Highlights from full parses on both sides | 400–600 | Medium: mapping highlight layers |
@@ -373,6 +374,25 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - The integration tests are `fork_review.rs`, after `agents/TESTING.md`'s `fork_<area>` naming.
 - `rustfmt` sorts `mod` lines, so the marker on `mod review;` in `commands.rs` is a trailing comment.
 
+### 6.3 Phase 2: found
+
+- No hook was needed. The check at the start of `render` compares each file's buffer, and its version, with the ones its rows came from.
+  It follows them only while a view shows the stream, since `update` commits through a view of it.
+- Keys by source line alone break on any insertion: every line below shifts, and every row would be replaced.
+  So the old rows' lines go through a line map of the old text to the new, from a line diff.
+  A changed line maps to the line that took its place, so an edited context row keeps its key, turns into an added row, and keeps the cursor.
+- The layout was rewritten around runs of unchanged lines. A line is shown when it's within the context of a hunk, or in an opened range.
+  Git's merging of nearby hunks falls out of that. Opened ranges are source lines, mapped through edits like the keys.
+- Reconcile runs over the whole stream, with files matched by path. `:review-refresh` uses the same path, and a file that appears or vanishes inserts or deletes its rows.
+- Helix maps a cursor on a replaced row to the start of what replaced it. A gap's cursor lands on its first shown line with no extra code.
+- A kept row whose text changed has only the text before its line ending replaced, so the cursor stays on the row. It lands at the end of the new text. The column isn't kept.
+- A new scratch buffer holds one line ending. The reconcile's last change runs to the end of the text to drop it.
+- Run from the stream, `:review-refresh` listed the working directory's changes, since the stream has no path. The stream keeps the directory its changes were listed from.
+- `update` puts back any pending edit to the stream first. Its transaction is built on the stream's text, and would panic on any other.
+- A buffer that closes falls back to the file on disk, read on the main thread then. Not covered by a test.
+- A file whose buffer opens with the same text costs one relayout of the whole stream, and no change to the buffer.
+- With a review open, `:review` no longer lists the changes. `:review-refresh` does.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -389,10 +409,9 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 ## 8. Open decisions
 
 1. **Relayout timing**, for editing. Live as you type, like Zed (recommended), or deferred until `Esc`, with rows fixed while in insert mode.
-2. **Context**, for phase 2. 3 lines (git's default). How much `ret` on a gap shows: all of it, or 10 lines at a time.
-3. **`staged` scope**, for phase 6. Read-only even with editing, since the index isn't a file. The alternative is to drop the `staged` scope.
-4. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
-5. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+2. **`staged` scope**, for phase 6. Read-only even with editing, since the index isn't a file. The alternative is to drop the `staged` scope.
+3. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
+4. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
 
 Decided, 2026-10-17:
 
@@ -404,6 +423,7 @@ Decided, 2026-10-17:
 - **The stream's keys are fixed at first.** They replace commands, not keys, so your bindings for `goto_next_change` and the like still apply.
   A `[keys.review]` table can come later.
 - **The stream is named `[scratch]`.** `Document::display_name` has no hook, and `[review]` would cost a seam in `document.rs`.
+- **`Enter` on a gap shows all of its lines**, and opened gaps stay open through edits and `:review-refresh`. Before phase 2, it opened the file.
 - **No hunk header rows** (`@@ -a,b +c,d @@`) at first. The gutter's old and new numbers already place each hunk. A toggle, like Hunk's `m`, can come later.
 
 ## 9. Reuse from diff review

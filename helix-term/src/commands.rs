@@ -415,7 +415,7 @@ impl MappableCommand {
         lsp_or_syntax_symbol_picker, "Open symbol picker from LSP or syntax information",
         changed_file_picker, "Open changed file picker",
         // FORK: review-stream
-        review_open, "Open the file of the review row under the cursor",
+        review_open, "Open the file of the review row under the cursor, or show the lines of a gap",
         select_references_to_symbol_under_cursor, "Select symbol references",
         workspace_symbol_picker, "Open workspace symbol picker",
         syntax_workspace_symbol_picker, "Open workspace symbol picker from syntax information",

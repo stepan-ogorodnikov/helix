@@ -95,7 +95,8 @@
 | `:move!`, `:mv!` | Move the current buffer and its corresponding file to a different path creating necessary subdirectories |
 | `:yank-diagnostic` | Yank diagnostic(s) under primary cursor to register, or clipboard by default |
 | `:yank-diagnostics` | Yank all diagnostics in the current buffer to a register, or clipboard by default, as path:line:col: severity: message |
-| `:review` | Show the changes of every changed file against HEAD in one read-only buffer |
+| `:review` | Show the changes of every changed file against HEAD in one read-only buffer, or switch to it |
+| `:review-refresh` | List the changed files again and read them from disk, keeping the review's place |
 | `:read`, `:r` | Load a file into buffer |
 | `:echo` | Prints the given arguments to the statusline. |
 | `:noop` | Does nothing. |

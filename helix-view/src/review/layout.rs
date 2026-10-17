@@ -4,6 +4,8 @@
 //! Each hunk gets `CONTEXT` lines around it, and hunks whose context would
 //! touch merge, as in git. A gap row stands for each run of lines left out.
 
+use std::ops::Range;
+
 use helix_core::{Rope, RopeSlice};
 use helix_vcs::Hunk;
 use imara_diff::{Algorithm, Diff, IndentHeuristic, IndentLevel, InternedInput, Interner};
@@ -57,69 +59,132 @@ pub fn hunks(base: &Rope, source: &Rope) -> Option<Vec<Hunk>> {
     Some(diff.hunks().collect())
 }
 
-pub fn rows(file: usize, hunks: &[Hunk], source_lines: usize, context: usize) -> Vec<Row> {
+pub fn rows(
+    file: usize,
+    hunks: &[Hunk],
+    source_lines: usize,
+    context: usize,
+    opened: &[Range<usize>],
+) -> Vec<Row> {
     let mut rows = Vec::new();
-    let mut shown = 0;
-    let mut first = 0;
-    while first < hunks.len() {
-        let mut last = first;
-        while hunks
-            .get(last + 1)
-            .is_some_and(|next| next.after.start - hunks[last].after.end <= 2 * context as u32)
-        {
-            last += 1;
-        }
-
-        let hunk = &hunks[first];
-        let mut source = (hunk.after.start as usize).saturating_sub(context);
-        // INVARIANT: the lines before a hunk, back to the previous one, are the
-        // same on both sides, so context lines have a base line too.
-        let mut base = hunk.before.start as usize - (hunk.after.start as usize - source);
-        if source > shown {
-            rows.push(Row::Gap {
+    if hunks.is_empty() {
+        return rows;
+    }
+    let unchanged = |rows: &mut Vec<Row>, lines: Range<usize>, base: usize, after, before| {
+        let shown = |line: usize| {
+            (after && line < lines.start + context)
+                || (before && line + context >= lines.end)
+                || opened.iter().any(|opened| opened.contains(&line))
+        };
+        let mut gap = None;
+        for (offset, source) in lines.clone().enumerate() {
+            if !shown(source) {
+                gap.get_or_insert(source);
+                continue;
+            }
+            if let Some(start) = gap.take() {
+                rows.push(Row::Gap {
+                    file,
+                    start,
+                    end: source,
+                });
+            }
+            rows.push(Row::Context {
                 file,
-                start: shown,
-                end: source,
+                base: base + offset,
+                source,
             });
         }
-        for hunk in &hunks[first..=last] {
-            while source < hunk.after.start as usize {
-                rows.push(Row::Context { file, base, source });
-                base += 1;
-                source += 1;
-            }
-            rows.extend(hunk.before.clone().map(|base| Row::Removed {
+        if let Some(start) = gap {
+            rows.push(Row::Gap {
                 file,
-                base: base as usize,
-            }));
-            rows.extend(hunk.after.clone().map(|source| Row::Added {
-                file,
-                source: source as usize,
-            }));
-            base = hunk.before.end as usize;
-            source = hunk.after.end as usize;
+                start,
+                end: lines.end,
+            });
         }
-        let end = (source + context).min(source_lines);
-        while source < end {
-            rows.push(Row::Context { file, base, source });
-            base += 1;
-            source += 1;
-        }
+    };
 
-        shown = end;
-        first = last + 1;
-    }
-    if !hunks.is_empty() && shown < source_lines {
-        rows.push(Row::Gap {
+    // INVARIANT: the lines between two hunks are the same on both sides, so
+    // each unchanged line has a base line too.
+    let (mut base, mut source) = (0, 0);
+    for (index, hunk) in hunks.iter().enumerate() {
+        unchanged(
+            &mut rows,
+            source..hunk.after.start as usize,
+            base,
+            index > 0,
+            true,
+        );
+        rows.extend(hunk.before.clone().map(|base| Row::Removed {
             file,
-            start: shown,
-            end: source_lines,
-        });
+            base: base as usize,
+        }));
+        rows.extend(hunk.after.clone().map(|source| Row::Added {
+            file,
+            source: source as usize,
+        }));
+        base = hunk.before.end as usize;
+        source = hunk.after.end as usize;
     }
+    unchanged(&mut rows, source..source_lines, base, true, false);
     rows
 }
 
+// WHY: a changed line maps to the line that took its place, so its row keeps
+// the cursor while its text changes. `None` means the texts are the same.
+pub fn line_map(old: &Rope, new: &Rope) -> Option<Vec<Option<usize>>> {
+    if old == new {
+        return None;
+    }
+    let old_lines = line_count(old);
+    let Some(hunks) = hunks(old, new) else {
+        return Some(vec![None; old_lines]);
+    };
+    let mut map = Vec::with_capacity(old_lines);
+    let mut new_line = 0;
+    for hunk in hunks {
+        while map.len() < hunk.before.start as usize {
+            map.push(Some(new_line));
+            new_line += 1;
+        }
+        let paired = hunk.after.clone().map(|line| Some(line as usize));
+        map.extend(
+            paired
+                .chain(std::iter::repeat(None))
+                .take(hunk.before.len()),
+        );
+        new_line = hunk.after.end as usize;
+    }
+    while map.len() < old_lines {
+        map.push(Some(new_line));
+        new_line += 1;
+    }
+    Some(map)
+}
+
+pub fn map_line(map: Option<&[Option<usize>]>, line: usize) -> Option<usize> {
+    match map {
+        None => Some(line),
+        Some(map) => map.get(line).copied().flatten(),
+    }
+}
+
+pub fn map_ranges(ranges: &[Range<usize>], map: Option<&[Option<usize>]>) -> Vec<Range<usize>> {
+    let mut mapped: Vec<Range<usize>> = Vec::new();
+    for line in ranges.iter().flat_map(|range| range.clone()) {
+        let Some(line) = map_line(map, line) else {
+            continue;
+        };
+        match mapped.last_mut() {
+            Some(last) if last.end == line => last.end += 1,
+            _ => mapped.push(line..line + 1),
+        }
+    }
+    mapped
+}
+
 #[cfg(test)]
+#[allow(clippy::single_range_in_vec_init)]
 mod tests {
     //! Rows print as `-3` for removed base line 3, `+3` for added source line 3,
     //! `3:4` for context at base line 3 and source line 4, and `~2..5` for a gap.
@@ -206,11 +271,61 @@ mod tests {
         ];
         for (name, hunks, source_lines, expected) in cases {
             assert_eq!(
-                show(&rows(0, hunks, *source_lines, CONTEXT)),
+                show(&rows(0, hunks, *source_lines, CONTEXT, &[])),
                 *expected,
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn opened_lines_get_rows_and_split_their_gap() {
+        let hunks = [hunk(10..11, 10..11)];
+        let rows = |opened: &[Range<usize>]| show(&rows(0, &hunks, 20, CONTEXT, opened));
+        assert_eq!(
+            rows(&[0..7]),
+            [
+                "0:0", "1:1", "2:2", "3:3", "4:4", "5:5", "6:6", "7:7", "8:8", "9:9", "-10", "+10",
+                "11:11", "12:12", "13:13", "~14..20"
+            ]
+        );
+        assert_eq!(
+            rows(&[2..4, 16..17]),
+            [
+                "~0..2", "2:2", "3:3", "~4..7", "7:7", "8:8", "9:9", "-10", "+10", "11:11",
+                "12:12", "13:13", "~14..16", "16:16", "~17..20"
+            ]
+        );
+    }
+
+    #[test]
+    fn line_map_follows_lines_and_pairs_changed_ones() {
+        let map = |old: &str, new: &str| line_map(&Rope::from(old), &Rope::from(new));
+        assert_eq!(map("a\nb\n", "a\nb\n"), None);
+        assert_eq!(
+            map("a\nb\nc\n", "new\na\nb\nc\n"),
+            Some(vec![Some(1), Some(2), Some(3)]),
+            "an insertion shifts the lines after it"
+        );
+        assert_eq!(
+            map("a\nb\nc\nd\n", "a\nB\nc\nd\n"),
+            Some(vec![Some(0), Some(1), Some(2), Some(3)]),
+            "a changed line keeps its place"
+        );
+        assert_eq!(
+            map("a\nb\nc\nd\n", "a\nB\nd\n"),
+            Some(vec![Some(0), Some(1), None, Some(2)]),
+            "a line replaced by fewer lines loses the rest"
+        );
+    }
+
+    #[test]
+    fn map_ranges_keeps_the_lines_that_survive() {
+        let map = [Some(0), None, Some(1), Some(2), Some(5)];
+        assert_eq!(map_ranges(&[0..4], Some(&map)), [0..3]);
+        assert_eq!(map_ranges(&[3..5], Some(&map)), [2..3, 5..6]);
+        assert!(map_ranges(&[1..2], Some(&map)).is_empty());
+        assert_eq!(map_ranges(&[1..3], None), [1..3]);
     }
 
     #[test]

@@ -4074,8 +4074,20 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
     TypableCommand {
         name: "review",
         aliases: &[],
-        doc: "Show the changes of every changed file against HEAD in one read-only buffer",
+        doc: "Show the changes of every changed file against HEAD in one read-only buffer, or switch to it",
         fun: super::review::review,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    // FORK: review-stream
+    TypableCommand {
+        name: "review-refresh",
+        aliases: &[],
+        doc: "List the changed files again and read them from disk, keeping the review's place",
+        fun: super::review::review_refresh,
         completer: CommandCompleter::none(),
         signature: Signature {
             positionals: (0, Some(0)),

@@ -5,16 +5,19 @@
 //! module lays out the rows, owns the buffer's text, and keeps it read-only.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::ops::Range;
+use std::path::{Path, PathBuf};
 
-use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection, Transaction};
+use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
 use helix_vcs::FileChange;
 
 use crate::editor::Action;
-use crate::{align_view, Align, DocumentId, Editor, ViewId};
+use crate::{align_view, view, Align, DocumentId, Editor, ViewId};
+use reconcile::Key;
 
 pub(crate) mod gutter;
 pub mod layout;
+mod reconcile;
 mod sync;
 
 pub use sync::sync;
@@ -53,6 +56,17 @@ impl Row {
         }
     }
 
+    fn key(self) -> (usize, Key) {
+        match self {
+            Row::Header { file } => (file, Key::Header),
+            Row::Gap { file, start, .. } => (file, Key::Gap(start)),
+            Row::Removed { file, base } => (file, Key::Removed(base)),
+            Row::Context { file, source, .. } | Row::Added { file, source } => {
+                (file, Key::Source(source))
+            }
+        }
+    }
+
     pub fn lines(self) -> (Option<usize>, Option<usize>) {
         match self {
             Row::Removed { base, .. } => (Some(base), None),
@@ -69,6 +83,7 @@ pub struct Section {
     pub content: Content,
 }
 
+#[derive(Clone)]
 pub enum Content {
     /// `base` is empty for a new file, and `source` for a deleted one.
     Text {
@@ -98,7 +113,9 @@ impl Review {
 
 pub struct Stream {
     pub doc: DocumentId,
-    pub files: Vec<FileChange>,
+    /// The directory the changes were listed from.
+    pub root: PathBuf,
+    files: Vec<File>,
     /// One per line of the buffer.
     pub rows: Vec<Row>,
     /// What the buffer has to hold.
@@ -109,6 +126,28 @@ pub struct Stream {
     selections: HashMap<ViewId, Selection>,
     /// Digits of the widest base and source line numbers.
     widths: [usize; 2],
+}
+
+/// A file of the stream, and what its rows came from.
+#[derive(Clone)]
+struct File {
+    change: FileChange,
+    content: Content,
+    /// The open buffer the source came from, and its version then.
+    seen: Option<(DocumentId, i32)>,
+    /// Source lines whose gap was opened.
+    opened: Vec<Range<usize>>,
+}
+
+impl From<Section> for File {
+    fn from(section: Section) -> File {
+        File {
+            change: section.change,
+            content: section.content,
+            seen: None,
+            opened: Vec::new(),
+        }
+    }
 }
 
 /// Where `ret` on a row opens its file.
@@ -128,7 +167,7 @@ impl Stream {
     pub fn target(&self, row: usize) -> Option<Target<'_>> {
         let (line, same_line) = match *self.rows.get(row)? {
             Row::Context { source, .. } | Row::Added { source, .. } => (source, true),
-            Row::Gap { start, .. } => (start, false),
+            Row::Gap { .. } => return None,
             Row::Removed { .. } => (self.line_below(row), false),
             Row::Header { file } => {
                 let change = self.rows[row + 1..]
@@ -145,7 +184,7 @@ impl Stream {
             }
         };
         Some(Target {
-            change: &self.files[self.rows[row].file()],
+            change: &self.files[self.rows[row].file()].change,
             line,
             same_line,
         })
@@ -171,34 +210,33 @@ impl Stream {
 }
 
 struct Layout {
-    files: Vec<FileChange>,
     rows: Vec<Row>,
     text: String,
     widths: [usize; 2],
 }
 
-fn layout(sections: Vec<Section>) -> Layout {
-    let mut files = Vec::with_capacity(sections.len());
+fn layout(files: &[File]) -> Layout {
     let mut rows = Vec::new();
     let mut text = String::new();
-    for (file, section) in sections.into_iter().enumerate() {
-        let (body, note) = match &section.content {
+    for (index, file) in files.iter().enumerate() {
+        let (body, note) = match &file.content {
             Content::Binary => (Vec::new(), Some("binary")),
             Content::Text { base, source } => match layout::hunks(base, source) {
                 None => (Vec::new(), Some("too large to diff")),
                 Some(hunks) if hunks.is_empty() => (Vec::new(), Some("no text changes")),
-                Some(hunks) => (
-                    layout::rows(file, &hunks, layout::line_count(source), layout::CONTEXT),
-                    None,
-                ),
+                Some(hunks) => {
+                    let lines = layout::line_count(source);
+                    let rows = layout::rows(index, &hunks, lines, layout::CONTEXT, &file.opened);
+                    (rows, None)
+                }
             },
         };
 
-        text.push_str(&header(&section.change, note));
+        text.push_str(&header(&file.change, note));
         text.push('\n');
-        rows.push(Row::Header { file });
+        rows.push(Row::Header { file: index });
         for row in &body {
-            match (*row, &section.content) {
+            match (*row, &file.content) {
                 (Row::Gap { start, end, .. }, _) => {
                     let lines = end - start;
                     let plural = if lines == 1 { "" } else { "s" };
@@ -211,11 +249,10 @@ fn layout(sections: Vec<Section>) -> Layout {
                     Row::Context { source, .. } | Row::Added { source, .. },
                     Content::Text { source: rope, .. },
                 ) => push_line(&mut text, rope.line(source)),
-                _ => unreachable!("only a text section has rows below its header"),
+                _ => unreachable!("only a text file has rows below its header"),
             }
         }
         rows.extend(body);
-        files.push(section.change);
     }
 
     let digits = |line: Option<usize>| line.map_or(1, |line| (line + 1).to_string().len());
@@ -223,12 +260,7 @@ fn layout(sections: Vec<Section>) -> Layout {
         digits(rows.iter().filter_map(|row| row.lines().0).max()),
         digits(rows.iter().filter_map(|row| row.lines().1).max()),
     ];
-    Layout {
-        files,
-        rows,
-        text,
-        widths,
-    }
+    Layout { rows, text, widths }
 }
 
 fn push_line(text: &mut String, line: RopeSlice) {
@@ -259,45 +291,145 @@ fn header(change: &FileChange, note: Option<&str>) -> String {
     }
 }
 
-pub fn show(editor: &mut Editor, sections: Vec<Section>) {
-    let layout = layout(sections);
+pub fn show(editor: &mut Editor, root: PathBuf, sections: Vec<Section>) {
     let open = editor
         .review
         .stream
         .as_ref()
         .map(|stream| stream.doc)
         .filter(|doc| editor.documents.contains_key(doc));
-    let doc_id = match open {
-        Some(doc) => {
-            editor.switch(doc, Action::Replace);
-            doc
+    if let Some(doc) = open {
+        editor.switch(doc, Action::Replace);
+        if let Some(stream) = editor.review.stream.as_mut() {
+            stream.root = root;
         }
-        None => editor.new_file(Action::Replace),
-    };
+        update(editor, sections.into_iter().map(File::from).collect(), None);
+        return;
+    }
 
-    let view = editor.tree.focus;
+    let doc_id = editor.new_file(Action::Replace);
     let doc = editor.documents.get_mut(&doc_id).expect("just opened");
     doc.readonly = true;
-    let text = Rope::from(layout.text.as_str());
-    let transaction = Transaction::change(
-        doc.text(),
-        [(0, doc.text().len_chars(), Some(layout.text.into()))].into_iter(),
-    )
-    .with_selection(Selection::point(0));
-    doc.apply(&transaction, view);
-    sync::settle(doc, &mut editor.tree, view);
-    align_view(doc, editor.tree.get(view), Align::Top);
-    let version = doc.version();
-
     editor.review.stream = Some(Stream {
         doc: doc_id,
-        files: layout.files,
-        rows: layout.rows,
-        text,
-        version,
+        root,
+        files: Vec::new(),
+        rows: Vec::new(),
+        text: doc.text().clone(),
+        version: doc.version(),
         selections: HashMap::new(),
-        widths: layout.widths,
+        widths: [1, 1],
     });
+    update(editor, sections.into_iter().map(File::from).collect(), None);
+    let view = editor.tree.get(editor.tree.focus);
+    let doc = editor.documents.get_mut(&doc_id).expect("just opened");
+    doc.set_selection(view.id, Selection::point(0));
+    align_view(doc, view, Align::Top);
+}
+
+pub fn open_gap(editor: &mut Editor, row: usize) -> bool {
+    let Some(stream) = editor.review.stream_of(view!(editor).doc) else {
+        return false;
+    };
+    let Some(&Row::Gap { file, start, end }) = stream.rows.get(row) else {
+        return false;
+    };
+    let files = stream.files.clone();
+    update(editor, files, Some((file, start..end)));
+    true
+}
+
+// INVARIANT: `open` is a range of `files`' source lines, not the stream's.
+fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<usize>)>) {
+    let Some(doc_id) = editor.review.stream.as_ref().map(|stream| stream.doc) else {
+        return;
+    };
+    // INVARIANT: the transaction below is built on the stream's text, so the
+    // buffer has to hold it.
+    if sync::put_back(editor, doc_id) {
+        sync::refused(editor);
+    }
+    let focus = editor.tree.focus;
+    let shown_in = std::iter::once(editor.tree.get(focus))
+        .chain(editor.tree.views().map(|(view, _)| view))
+        .find(|view| view.doc == doc_id)
+        .map(|view| view.id);
+    // INVARIANT: the buffer's history is committed through a view of it.
+    let Some(view) = shown_in else {
+        return;
+    };
+    for file in &mut files {
+        file.seen = editor
+            .document_by_path(file.change.path())
+            .map(|doc| (doc.id(), doc.version()));
+    }
+
+    let Some(stream) = editor.review.stream.as_ref() else {
+        return;
+    };
+    let index: HashMap<PathBuf, usize> = files
+        .iter()
+        .enumerate()
+        .map(|(new, file)| (file.change.path().to_path_buf(), new))
+        .collect();
+    let mut maps = Vec::with_capacity(stream.files.len());
+    for old in &stream.files {
+        let Some(&new) = index.get(old.change.path()) else {
+            maps.push(None);
+            continue;
+        };
+        let (base, source) = match (&old.content, &files[new].content) {
+            (
+                Content::Text {
+                    base: old_base,
+                    source: old_source,
+                },
+                Content::Text { base, source },
+            ) => (
+                layout::line_map(old_base, base),
+                layout::line_map(old_source, source),
+            ),
+            _ => (None, None),
+        };
+        files[new].opened = layout::map_ranges(&old.opened, source.as_deref());
+        maps.push(Some((new, base, source)));
+    }
+    if let Some((file, lines)) = open {
+        files[file].opened.push(lines);
+    }
+
+    let layout = layout(&files);
+    let old_keys: Vec<_> = stream
+        .rows
+        .iter()
+        .map(|row| {
+            let (file, key) = row.key();
+            let (new, base, source) = maps[file].as_ref()?;
+            let key = match key {
+                Key::Header => Key::Header,
+                Key::Gap(line) => Key::Gap(layout::map_line(source.as_deref(), line)?),
+                Key::Removed(line) => Key::Removed(layout::map_line(base.as_deref(), line)?),
+                Key::Source(line) => Key::Source(layout::map_line(source.as_deref(), line)?),
+            };
+            Some((*new, key))
+        })
+        .collect();
+    let new_keys: Vec<_> = layout.rows.iter().map(|row| row.key()).collect();
+    let text = Rope::from(layout.text.as_str());
+    let transaction = reconcile::transaction(&stream.text, &old_keys, &text, &new_keys);
+
+    let doc = editor.documents.get_mut(&doc_id).expect("a view shows it");
+    doc.apply(&transaction, view);
+    sync::settle(doc, &mut editor.tree, view);
+    debug_assert_eq!(*doc.text(), text);
+    let version = doc.version();
+    let stream = editor.review.stream.as_mut().expect("checked above");
+    stream.files = files;
+    stream.rows = layout.rows;
+    stream.text = text;
+    stream.version = version;
+    stream.widths = layout.widths;
+    sync::save_selections(editor, doc_id);
 }
 
 #[cfg(test)]
@@ -320,7 +452,7 @@ mod tests {
 
     #[test]
     fn layout_text_has_one_line_per_row() {
-        let layout = layout(vec![
+        let layout = layout(&files(vec![
             modified(
                 "a.txt",
                 "1\n2\n3\n4\n5\n6\n7\n8\n9\n",
@@ -333,7 +465,7 @@ mod tests {
                 },
                 content: Content::Binary,
             },
-        ]);
+        ]));
         assert_eq!(
             layout.text,
             "a.txt  modified\n\
@@ -356,18 +488,24 @@ mod tests {
                 n => format!("{n}\n"),
             })
             .collect();
-        let shown = layout(vec![modified("a.txt", &base, &source)]);
+        let shown = layout(&files(vec![modified("a.txt", &base, &source)]));
         assert_eq!(shown.widths, [4, 3]);
 
-        let shown = layout(vec![modified("a.txt", "", "new\n")]);
+        let shown = layout(&files(vec![modified("a.txt", "", "new\n")]));
         assert_eq!(shown.widths, [1, 1]);
     }
 
+    fn files(sections: Vec<Section>) -> Vec<File> {
+        sections.into_iter().map(File::from).collect()
+    }
+
     fn stream(sections: Vec<Section>) -> Stream {
-        let layout = layout(sections);
+        let files = files(sections);
+        let layout = layout(&files);
         Stream {
             doc: DocumentId::default(),
-            files: layout.files,
+            root: PathBuf::new(),
+            files,
             rows: layout.rows,
             text: Rope::from(layout.text),
             version: 0,
@@ -409,10 +547,9 @@ mod tests {
         );
         assert_eq!(target(2), one(0, true), "an added row opens its own line");
         assert_eq!(target(3), one(1, true), "a context row opens its own line");
-        assert_eq!(
-            target(6),
-            one(4, false),
-            "a gap opens its first hidden line"
+        assert!(
+            stream.target(6).is_none(),
+            "a gap opens in place, not in the file"
         );
         assert_eq!(
             target(10),

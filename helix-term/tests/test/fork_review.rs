@@ -329,3 +329,161 @@ async fn ret_opens_the_file_at_the_row_and_c_o_comes_back() -> anyhow::Result<()
     )
     .await
 }
+
+/// `a.txt` with its seventh line changed, as the review shows it. Row 1 is the
+/// gap, row 6 `seven`.
+fn seventh_changed() -> TempDir {
+    repo(
+        &[("a.txt", TEN)],
+        &[("a.txt", Some("1\n2\n3\n4\n5\n6\nseven\n8\n9\n10\n"))],
+    )
+}
+
+fn review_of(file: &Path, rows: &str) -> String {
+    format!("{}  modified\n{rows}", shown(file.to_path_buf()))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_edit_in_the_file_shows_when_you_come_back() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/seven<ret><ret>Ix<esc><C-o>"),
+                Some(&|app| {
+                    assert!(in_stream(app));
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(&file, "⋯ 3 unchanged lines\n4\n5\n6\n7\nxseven\n8\n9\n10\n")
+                    );
+                    assert_eq!(cursor(app).0, 6, "the cursor stays on the edited line");
+                }),
+            ),
+            (
+                Some("/^5$<ret><ret>Ix<esc><C-o>"),
+                Some(&|app| {
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(
+                            &file,
+                            "⋯ 1 unchanged line\n2\n3\n4\n5\nx5\n6\n7\nxseven\n8\n9\n10\n"
+                        ),
+                        "an edited context line gets its old version above it"
+                    );
+                    assert_eq!(cursor(app).0, 6, "the cursor stays on the edited line");
+                }),
+            ),
+            (
+                Some("/xseven<ret><ret>xc7<esc>/x5<ret>xc5<esc>:review<ret>"),
+                Some(&|app| {
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(&file, "").replace("modified\n", "modified, no text changes\n"),
+                        "lines put back as they were in HEAD lose their rows"
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ret_on_a_gap_shows_its_lines_and_they_stay_shown() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    let opened = |seventh: &str| {
+        review_of(
+            &file,
+            &format!("1\n2\n3\n4\n5\n6\n7\n{seventh}\n8\n9\n10\n"),
+        )
+    };
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("j<ret>"),
+                Some(&|app| {
+                    assert!(in_stream(app));
+                    assert_eq!(stream_text(app), opened("seven"));
+                    assert_eq!(
+                        cursor(app),
+                        (1, 0),
+                        "the cursor lands on the first line shown"
+                    );
+                }),
+            ),
+            (
+                Some("/seven<ret><ret>Ix<esc><C-o>"),
+                Some(&|app| assert_eq!(stream_text(app), opened("xseven"))),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_switches_to_the_open_review() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("jjj<ret>:review<ret>"),
+        Some(&|app| {
+            assert!(in_stream(app));
+            assert_eq!(cursor(app), (3, 0));
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_refresh_reads_the_changes_again_and_keeps_the_place() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let mut app = app_on(repo.path().join("b.txt"))?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "j<ret>", |app| !stream_text(app).contains('⋯')).await?;
+    std::fs::write(
+        repo.path().join("a.txt"),
+        "1\n2\n3\n4\n5\n6\nseven\n8\n9\nten\n",
+    )?;
+    std::fs::write(repo.path().join("new.txt"), "fresh\n")?;
+    run_until(&mut app, ":review-refresh<ret>", |app| {
+        stream_text(app).contains("fresh")
+    })
+    .await?;
+
+    test_key_sequence(
+        &mut app,
+        None,
+        Some(&|app| {
+            assert!(in_stream(app));
+            assert_eq!(
+                stream_text(app),
+                format!(
+                    "{}  modified\n1\n2\n3\n4\n5\n6\n7\nseven\n8\n9\n10\nten\n\
+                     {}  new file\nfresh\n",
+                    shown(repo.path().join("a.txt")),
+                    shown(repo.path().join("new.txt")),
+                ),
+                "the opened gap stays open"
+            );
+            assert_eq!(cursor(app), (1, 0));
+        }),
+        false,
+    )
+    .await
+}

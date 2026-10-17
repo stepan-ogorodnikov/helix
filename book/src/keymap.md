@@ -469,11 +469,13 @@ Each file starts with a row naming it and how it changed. Its hunks follow with 
 The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
 
 Normal and select mode keys work in the review, but an edit is put back.
+An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
+With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review adds these keys:
 
-| Key     | Command       | Description                                                       |
-| -----   | -----         | -------------                                                     |
-| `Enter` | `review_open` | Open the row's file at that line, to edit it. `Ctrl-o` comes back |
+| Key     | Command       | Description                                                                                                  |
+| -----   | -----         | -------------                                                                                                |
+| `Enter` | `review_open` | Open the row's file at that line, to edit it. `Ctrl-o` comes back. On a row of unchanged lines, show them   |
 
 ## Picker
 
