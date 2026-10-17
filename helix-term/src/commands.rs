@@ -1,6 +1,7 @@
 mod changed_file;
 pub(crate) mod dap;
 pub(crate) mod lsp;
+mod review; // FORK: review-stream
 pub(crate) mod syntax;
 pub(crate) mod typed;
 
@@ -413,6 +414,8 @@ impl MappableCommand {
         syntax_symbol_picker, "Open symbol picker from syntax information",
         lsp_or_syntax_symbol_picker, "Open symbol picker from LSP or syntax information",
         changed_file_picker, "Open changed file picker",
+        // FORK: review-stream
+        review_open, "Open the file of the review row under the cursor",
         select_references_to_symbol_under_cursor, "Select symbol references",
         workspace_symbol_picker, "Open workspace symbol picker",
         syntax_workspace_symbol_picker, "Open workspace symbol picker from syntax information",
@@ -3482,6 +3485,11 @@ fn jumplist_picker(cx: &mut Context) {
 // FORK: changed-files picker.
 fn changed_file_picker(cx: &mut Context) {
     changed_file::changed_file_picker(cx);
+}
+
+// FORK: review-stream
+fn review_open(cx: &mut Context) {
+    review::open(cx);
 }
 
 pub fn command_palette(cx: &mut Context) {

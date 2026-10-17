@@ -98,11 +98,27 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: planned. No code yet.
+- Status: active, phase 1 of `fork/review-stream.md`.
 - Plan: `fork/review-stream.md`.
-- Adds, from phase 1: `:review` opens a read-only buffer with every changed file's hunks, Hunk style. `ret` opens the file at that line.
-- Upstream files: none yet. The plan's section 4 lists the seams each phase adds.
-- Fork-owned: `fork/review-stream.md`.
+- Adds: `:review` shows every changed file's hunks against `HEAD` in one read-only buffer, with old and new line numbers and `+`/`-` signs in the gutter.
+  An edit in it is put back. `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back.
+- Upstream files:
+  - `helix-view/src/editor.rs`: the `Editor::review` field, its default, and one condition in `Editor::switch` that keeps the stream when you switch away from it.
+  - `helix-view/src/gutter.rs`: the stream's branch at the top of `line_numbers` and `diff`.
+  - `helix-view/src/lib.rs`: `pub mod review;`.
+  - `helix-view/Cargo.toml`: `imara-diff`. Bump it together with helix-core's and helix-vcs's.
+  - `helix-term/src/ui/editor.rs`: the `review_keys` field and its default, the keymap swap at the top of `handle_event`, and `review::sync` at the top of `render`.
+  - `helix-term/src/commands.rs`: `mod review;`, the `review_open` row, and its wrapper.
+  - `helix-term/src/commands/typed.rs`: the `:review` row.
+  - `helix-term/src/keymap.rs`: `pub mod review;`.
+  - `helix-term/tests/integration.rs`: `mod fork_review;`.
+  - `book/src/keymap.md` (Review), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
+- Fork-owned: `helix-view/src/review.rs` and `review/{layout,gutter,sync}.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/keymap/review.rs`, `helix-term/tests/test/fork_review.rs`.
+- Tests: unit tests in `review.rs` and `review/layout.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
 - Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
 - Drop when: upstream ships a multi-file diff view in one buffer.
-- Rulings: the dropped diff review feature's plan and code stay under the local tag `archive/diff-review`. The tag is never pushed.
+- Rulings:
+  - The dropped diff review feature's plan and code stay under the local tag `archive/diff-review`. The tag is never pushed.
+  - The stream keeps itself read-only from `render`, not from event hooks, so one check catches edits from keys, typable commands, and paste before they're drawn.
+  - The stream sets `gutters.line_numbers.min_width` on the views that show it, because `GutterType::width` gets no `&Editor`.
+  - The condition in `Editor::switch` was approved as the one seam inside an upstream function in a hot file. Without it, switching away deletes the stream, an unmodified buffer with no path.

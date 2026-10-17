@@ -15,6 +15,8 @@ pub mod info;
 pub mod input;
 pub mod keyboard;
 pub mod register;
+// FORK: review-stream
+pub mod review;
 pub mod theme;
 pub mod tree;
 pub mod view;

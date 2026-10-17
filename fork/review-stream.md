@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 0 done 2026-10-17. Phase 1 starts when the human asks for it.
+Status: phase 1 done 2026-10-17. Phase 2 starts when the human asks for it.
 
 ## Bottom line
 
@@ -108,19 +108,20 @@ Prior art:
 
 ### 3.3 Read-only (phase 1)
 
-- A `DocumentDidChange` hook on the stream queues the inverse of each change.
-  The fork's own edits to the stream carry a flag, and the hook skips them.
-- A `PostCommand` hook applies the queue, restores the selections saved after the last command, and says why in the status line.
-- Edits that don't come from a key, like typable commands and bracketed paste, fire no `PostCommand`.
-  The change hook dispatches a callback with `job::dispatch_blocking` for them, which runs on the next turn of the event loop.
-  Such an edit may show for a frame. If it does, a seam at the start of `EditorView::render` restores it before drawing.
-- An `OnModeSwitch` hook ends insert mode in the stream at once. Phase 1 finds out whether the hook can switch modes itself, or has to dispatch it.
+- A check at the start of `EditorView::render`, `review::sync`, runs before every frame.
+  It sees an edit from any source before it's drawn: a key, an on-next-key callback like `r`, a typable command, a paste.
+- The stream keeps a copy of the text it has to hold, and the buffer's version when it last held it.
+  When the version moved, the check puts the text back with one transaction, restores each view's selection from the last frame, and says why in the status line.
+- In insert mode in the stream, the check calls `Editor::enter_normal_mode` first, since leaving insert mode can edit the buffer.
 - After a restore, the stream's history is cleared and `reset_modified` is called, so `u` finds nothing and the stream never counts as modified.
+  Every view syncs its jumps before the history goes, then records revision 0 (6.2).
+- The buffer is `readonly`, so the statusline says so. Upstream only uses that flag for writes.
 - `:w` in the stream fails, as for any buffer with no path.
 
 ### 3.4 Keeping it current (phase 2)
 
-- A source's `DocumentDidChange` marks its file stale. The next `PostCommand`, or the dispatched callback, re-diffs stale files and reconciles them.
+- The check at the start of `render` compares each open source's version with the one its rows came from, and re-diffs and reconciles the files that moved.
+  A `DocumentDidChange` hook isn't needed for that.
 - **Reconcile** builds the rows a file should have, compares them with its current rows by identity, and applies one transaction to the stream:
   insert and delete rows, and copy source text into rows whose text changed.
   Selections map through it like through any edit, so the cursor stays on its row, in every view of the stream.
@@ -133,8 +134,9 @@ Prior art:
 
 ### 3.5 Rendering
 
-- **Gutter (phase 1).** `gutter.rs`'s `line_numbers`, `line_numbers_width`, and `diff` take a stream branch: old and new numbers, then the sign.
+- **Gutter (phase 1).** `gutter.rs`'s `line_numbers` and `diff` take a stream branch: old and new numbers, then the sign.
   No new `GutterType`, so no change to the enum in `editor.rs` or to config parsing.
+  The width comes from the view's `gutters.line_numbers.min_width`, which the check sets on the stream's views (6.2).
   The sign column uses `diff.plus` and `diff.minus`, so every theme tells the rows apart.
 - **Row tints (phase 4)** use #15631's scopes, `diff.{plus,minus,delta}.view`, as diff review did.
 - **Word highlights (phase 4)** reuse `words.rs` from `archive/diff-review`.
@@ -279,38 +281,40 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | File | Commits/yr | Seam | Phase |
 | --- | --- | --- | --- |
 | `helix-view/src/editor.rs` | 16 | Field `review` on `Editor`, and its default | 1 |
+| `helix-view/src/editor.rs` | | One condition in `Editor::switch` that keeps the stream when you leave it | 1 |
 | `helix-view/src/lib.rs` | 3 | `pub mod review;` | 1 |
-| `helix-view/src/gutter.rs` | 3 | Stream branches in `line_numbers`, `line_numbers_width`, `diff` | 1 |
-| `helix-term/src/ui/editor.rs` | 9 | Keymap field on `EditorView`, swapped in for the stream | 1 |
-| `helix-term/src/ui/editor.rs` | | Restore at the start of `render`, only if the dispatched callback's frame of lag shows | 1 |
+| `helix-view/src/gutter.rs` | 3 | Stream branches in `line_numbers` and `diff` | 1 |
+| `helix-term/src/ui/editor.rs` | 9 | Keymap field on `EditorView`, swapped in for the stream at the start of `handle_event` | 1 |
+| `helix-term/src/ui/editor.rs` | | `review::sync` at the start of `render` | 1 |
 | `helix-term/src/ui/editor.rs` | | `render_view`: one decoration, overlays, highlighter off for the stream | 4–5 |
-| `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event` and `render` | 7 |
-| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call | 1 |
+| `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event` | 7 |
+| `helix-term/src/keymap.rs` | | `pub mod review;` | 1 |
+| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call, if a hook is needed | 7 |
 | `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8 |
 | `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6 |
 | `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8 |
 | `helix-vcs/src/git.rs`, `helix-vcs/src/lib.rs` | 3, 1 | `mod index;` lines, as in diff review phase 4 | 6 |
 | `helix-view/Cargo.toml` | 10 | `imara-diff`, unless the diff goes through `helix-vcs` | 1 |
 | `book/src/*` | | Commands, keys, theme scopes | each |
-| `helix-term/tests/integration.rs` | 1 | `mod review_stream;` | 1 |
+| `helix-term/tests/integration.rs` | 1 | `mod fork_review;` | 1 |
 | `helix-term/src/commands/lsp.rs`, `handlers/completion/*`, `ui/completion.rs` | 6, 0, 1 | Not known until the phase 9 spike | 9 |
 
 Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 
 ## 5. Fork-owned files
 
-- `helix-view/src/review.rs`: `ReviewStreams`, the `Editor` field type. The row table and lookups.
+- `helix-view/src/review.rs`: `Review`, the `Editor` field type. The row table, the stream's text, and lookups.
 - `helix-view/src/review/layout.rs`: base + source + hunks + context → rows. Pure, unit-tested. Phase 1.
 - `helix-view/src/review/reconcile.rs`: current rows vs wanted rows → one stream transaction. Pure, unit-tested. Phase 2.
 - `helix-view/src/review/gutter.rs`: old and new numbers, signs. Phase 1.
 - `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phase 7.
 - `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync, loading sources, and the undo log (phases 7–8).
-- `helix-term/src/handlers/review.rs`: the `DocumentDidChange`, `PostCommand`, and `OnModeSwitch` hooks, then `PostInsertChar`, `DiagnosticsDidChange`, and `DocumentDidClose`.
+- `helix-term/src/handlers/review.rs`, from phase 7: `PostCommand`, `PostInsertChar`, `DiagnosticsDidChange`, and `DocumentDidClose` hooks, as editing needs them.
 - `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and save.
 - `helix-term/src/keymap/review.rs`: the stream keymap overlay.
 - `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
 - Phase 6: `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, restored from `archive/diff-review` and adapted.
-- `helix-term/tests/test/review_stream.rs` and children: integration tests over a temporary git repository, as `fork_diff/review.rs` did.
+- `helix-term/tests/test/fork_review.rs` and children: integration tests over a temporary git repository, as `fork_diff/review.rs` did.
 
 ## 6. Phases
 
@@ -318,7 +322,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | --- | --- | --- | --- | --- |
 | 0. Plan | Done | Commit this plan and a `review-stream` ledger entry (6.1). | 0 | Low |
 | **Read-only review** | | | **2.5–3.8k** | |
-| 1. Read-only stream | Planned | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200 | Medium: render seams, row math, the guard |
+| 1. Read-only stream | Done | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200. Actual: about 820, plus 580 of tests. | Medium: render seams, row math, the guard |
 | 2. Keep it current | Planned | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500 | **High**: the cursor while rows appear and vanish |
 | 3. Navigation | Planned | Hunk and file motions across files | 150–300 | Low |
 | 4. Look | Planned | Row tints, header and gap decorations, word highlights | 200–400 | Low |
@@ -344,12 +348,37 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - This plan goes in its own commit, before any code, as `AGENTS.md` asks. A `review-stream` entry in `FORK.md`, status planned, goes in the same commit.
   So does the fix to `fork/fork-infra.md`, which named `fork/diff-review.md` as a next step.
 
+### 6.2 Phase 1: found
+
+- The guard is one check at the start of `render`, not hooks.
+  `r`, surround, and other on-next-key callbacks edit without a `PostCommand`, and a dispatched callback would draw the edit for a frame first.
+  Phase 1 touches no `handlers.rs`.
+- Clearing the stream's history has to keep the views in step. A view records the last revision it synced (`doc_revisions`).
+  One left past the end of the new history panics in `History::changes_since`.
+  `settle` syncs every view, swaps the history, then records revision 0 with an empty transaction.
+- `Editor::switch` with `Action::Replace` deletes an unmodified buffer with no path when you leave it, and drops it from every jumplist.
+  The stream is such a buffer, so `ret`, `:b`, or `ga` would destroy it, and `C-o` couldn't return.
+  One condition in `switch` keeps it. Approved 2026-10-17 as the one seam inside an upstream function in a hot file.
+- `GutterType::width` gets no `&Editor`, so `line_numbers_width` can't see the rows.
+  The check sets `gutters.line_numbers.min_width` on the views that show the stream, every frame, and puts the configured width back on the others.
+  `line_numbers_width` keeps no seam.
+- The stream keymap is built when the stream gets focus: a clone of the user's keymap with `review_open` merged over it.
+  A config reload while the stream has focus takes effect the next time it gets focus.
+- Hunks drop the empty line after a final line ending, unlike the diff worker's.
+  Otherwise a file that loses its final line ending gets a removed row for an empty line.
+- A file's last line with no line ending gets `\n` in the stream. Phase 7's forwarding has to account for that one char.
+- The git walk sees only the worktree. A file whose only change is unsaved in a buffer isn't listed. A listed file shows its buffer's text, unsaved edits included.
+- `:review` diffs the repository of the current file, or the working directory for a buffer with no path, as diff review's did.
+- Reading runs on the blocking pool. Decoding and diffing run on the main thread when the files arrive. Not measured on a large review.
+- The integration tests are `fork_review.rs`, after `agents/TESTING.md`'s `fork_<area>` naming.
+- `rustfmt` sorts `mod` lines, so the marker on `mod review;` in `commands.rs` is a trailing comment.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
 | --- | --- | --- |
 | Cursor jumps when rows appear or vanish | Reconcile, phase 2 | Match rows by identity. Unit tests on layout transitions: context → modified, modified → context, hunks merging and splitting. |
-| An edit slips past the read-only guard | Guard, phase 1 | Key edits restore in `PostCommand`. Others restore in a dispatched callback, or at the `render` seam if the callback lags. Debug builds assert that the stream's text equals its rows after each restore. |
+| An edit slips past the read-only guard | Guard, phase 1 | The check runs before every frame and compares the buffer's version, so any edit is put back before it's drawn. |
 | Stream and source drift apart | Sync, phase 7 | One queue in event order. The fork's own edits are flagged. Debug builds assert after each sync that every editable row equals its source line. |
 | Undo surprises | Stream log, phase 8 | Undo only when the source's revision matches. Otherwise stop and name the file. |
 | An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete but still leaves you in insert mode. |

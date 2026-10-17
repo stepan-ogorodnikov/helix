@@ -1353,6 +1353,8 @@ pub struct Editor {
     pub mouse_down_range: Option<Range>,
     pub cursor_cache: CursorCache,
     pub workspace_trust: WorkspaceTrust,
+    // FORK: review-stream
+    pub review: crate::review::Review,
 }
 
 pub type Motion = Box<dyn Fn(&mut Editor)>;
@@ -1478,6 +1480,8 @@ impl Editor {
             cursor_cache: CursorCache::default(),
             dir_stack: VecDeque::with_capacity(DIR_STACK_CAP),
             workspace_trust,
+            // FORK: review-stream
+            review: Default::default(),
         }
     }
 
@@ -1967,6 +1971,8 @@ impl Editor {
                     && doc.path().is_none()
                     // If the buffer we are changing to is not this buffer
                     && id != doc.id
+                    // FORK: review-stream
+                    && self.review.stream_of(doc.id).is_none()
                     // Ensure the buffer is not displayed in any other splits.
                     && !self
                         .tree

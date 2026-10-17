@@ -96,6 +96,10 @@ pub fn diff<'doc>(
     theme: &Theme,
     _is_focused: bool,
 ) -> GutterFn<'doc> {
+    // FORK: review-stream
+    if let Some(signs) = crate::review::gutter::signs(_editor, doc, theme) {
+        return signs;
+    }
     let added = theme.get("diff.plus.gutter");
     let deleted = theme.get("diff.minus.gutter");
     let modified = theme.get("diff.delta.gutter");
@@ -148,6 +152,10 @@ pub fn line_numbers<'doc>(
     theme: &Theme,
     is_focused: bool,
 ) -> GutterFn<'doc> {
+    // FORK: review-stream
+    if let Some(numbers) = crate::review::gutter::line_numbers(editor, doc, theme, is_focused) {
+        return numbers;
+    }
     let text = doc.text().slice(..);
     let width = line_numbers_width(view, doc);
 

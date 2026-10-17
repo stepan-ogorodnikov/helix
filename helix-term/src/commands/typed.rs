@@ -4070,6 +4070,18 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
+    // FORK: review-stream
+    TypableCommand {
+        name: "review",
+        aliases: &[],
+        doc: "Show the changes of every changed file against HEAD in one read-only buffer",
+        fun: super::review::review,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
     TypableCommand {
         name: "read",
         aliases: &["r"],

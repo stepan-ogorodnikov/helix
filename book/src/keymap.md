@@ -462,6 +462,19 @@ mode before pressing `n` or `N` makes it possible to keep the current
 selection. Toggling it on and off during your iterative searching allows
 you to selectively add search terms to your selections.
 
+## Review
+
+`:review` shows the changes of every changed file in one read-only buffer, diffed against `HEAD`.
+Each file starts with a row naming it and how it changed. Its hunks follow with 3 lines of context, and a row counts the unchanged lines left out between them.
+The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
+
+Normal and select mode keys work in the review, but an edit is put back.
+The review adds these keys:
+
+| Key     | Command       | Description                                                       |
+| -----   | -----         | -------------                                                     |
+| `Enter` | `review_open` | Open the row's file at that line, to edit it. `Ctrl-o` comes back |
+
 ## Picker
 
 Keys to use within picker. Override them in `[keys.picker]`. A binding of `nop` drops that key so the [prompt](#prompt) handles it. Other prompt keys work in pickers except where a picker binding takes them.

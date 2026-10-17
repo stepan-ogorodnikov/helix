@@ -18,6 +18,8 @@ mod test {
     mod auto_pairs;
     mod command_line;
     mod commands;
+    // FORK: review-stream
+    mod fork_review;
     mod movement;
     mod splits;
 }
