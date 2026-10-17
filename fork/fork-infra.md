@@ -53,7 +53,7 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | 5 | Done | Add a land script that gates and fast-forwards fork. | `tools/fork/land.sh`, and the push rule in `AGENTS.md`. |
 | 6 | Done | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
 | 7 | Done | Add the testing and manual-verify guides. | `agents/TESTING.md` and `agents/VERIFY.md`. |
-| 8 | | Add the review guide. | `agents/REVIEW.md`. |
+| 8 | Done | Add the review guide. | `agents/REVIEW.md`. |
 | 9 | | Add the rebase playbook. | `agents/REBASE.md`. |
 | 10 | | Write down how a plan is split and approved. | `AGENTS.md` §Plans, from koloda's `IMPLEMENTATION-PLAN.md`. |
 
@@ -81,3 +81,5 @@ Next, out of this plan's scope:
 - Item 10 was missing from the first version of this plan. The decisions put koloda's plan rules in `AGENTS.md`, but no item did it.
 - The report said `test_key_sequences` waits up to 500 ms. That limit only covers the final quit. Each sequence runs until idle, 250 ms after the last key.
 - The harness notes in `TESTING.md` about the idle timer and the working directory came from the dropped diff review's integration tests.
+- `REVIEW.md` doesn't make a missing integration test for picker behavior Blocking, as the report proposed.
+  The harness can't reach a picker's state or change the working directory, so the rule is the test layer `TESTING.md` names.
