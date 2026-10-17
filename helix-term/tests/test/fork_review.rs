@@ -568,3 +568,101 @@ async fn a_custom_key_for_goto_next_change_moves_by_review_hunk() -> anyhow::Res
     )
     .await
 }
+
+/// `a.txt` with line 2 changed and staged, then line 9 changed and not.
+fn staged_and_unstaged() -> TempDir {
+    let repo = repo(
+        &[("a.txt", TEN)],
+        &[("a.txt", Some("1\ntwo\n3\n4\n5\n6\n7\n8\n9\n10\n"))],
+    );
+    git(repo.path(), &["add", "a.txt"]);
+    std::fs::write(
+        repo.path().join("a.txt"),
+        "1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n",
+    )
+    .unwrap();
+    repo
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_scopes_diff_head_the_index_and_the_files() -> anyhow::Result<()> {
+    let repo = staged_and_unstaged();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    let status_is = |message: &'static str| move |app: &Application| status(app) == message;
+
+    run_until(
+        &mut app,
+        ":review unstaged<ret>",
+        status_is("Reviewing unstaged changes"),
+    )
+    .await?;
+    assert_eq!(
+        stream_text(&app),
+        review_of(&file, "⋯ 5 unchanged lines\n6\n7\n8\n9\nnine\n10\n"),
+        "the index against the file"
+    );
+    run_until(
+        &mut app,
+        ":review staged<ret>",
+        status_is("Reviewing staged changes"),
+    )
+    .await?;
+    assert_eq!(
+        stream_text(&app),
+        review_of(&file, "1\n2\ntwo\n3\n4\n5\n⋯ 5 unchanged lines\n"),
+        "HEAD against the index"
+    );
+    run_until(
+        &mut app,
+        ":review all<ret>",
+        status_is("Reviewing all changes"),
+    )
+    .await?;
+    assert_eq!(
+        stream_text(&app),
+        review_of(&file, "1\n2\ntwo\n3\n4\n5\n6\n7\n8\n9\nnine\n10\n"),
+        "HEAD against the file"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_staged_review_ignores_edits_to_the_file() -> anyhow::Result<()> {
+    let repo = staged_and_unstaged();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    run_until(&mut app, ":review staged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+    let before = stream_text(&app);
+
+    test_key_sequence(
+        &mut app,
+        Some("/two<ret><ret>Ix<esc><C-o>"),
+        Some(&|app| {
+            assert!(in_stream(app));
+            assert_eq!(stream_text(app), before);
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn review_names_the_scopes_it_knows() -> anyhow::Result<()> {
+    let repo = staged_and_unstaged();
+    test_key_sequence(
+        &mut app_on(repo.path().join("a.txt"))?,
+        Some(":review head<ret>"),
+        Some(&|app| {
+            assert_eq!(
+                status(app),
+                "'review': 'head' is not one of all, unstaged, or staged"
+            );
+        }),
+        false,
+    )
+    .await
+}

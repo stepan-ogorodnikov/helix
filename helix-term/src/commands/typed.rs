@@ -4074,11 +4074,11 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
     TypableCommand {
         name: "review",
         aliases: &[],
-        doc: "Show the changes of every changed file against HEAD in one read-only buffer, or switch to it",
+        doc: "Show the changes of every changed file in one read-only buffer, or switch to it. Scopes: all (HEAD against the files, the default), unstaged (the index against the files), staged (HEAD against the index)",
         fun: super::review::review,
-        completer: CommandCompleter::none(),
+        completer: CommandCompleter::positional(&[super::review::complete_scope]),
         signature: Signature {
-            positionals: (0, Some(0)),
+            positionals: (0, Some(1)),
             ..Signature::DEFAULT
         },
     },

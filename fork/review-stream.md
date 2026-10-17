@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 5 done 2026-10-17. Phase 6 follows without a stop, as the human asked.
+Status: phase 6a done 2026-10-17. Phases 6b–6d follow without a stop, as the human asked.
 
 ## Bottom line
 
@@ -328,7 +328,10 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 3. Navigation | Done | Hunk and file motions across files | 150–300. Actual: about 180, plus 90 of tests. | Low |
 | 4. Look | Done | Row tints, header and gap decorations, word highlights | 200–400. Actual: about 300, of it 130 ported, plus 100 of tests. | Low |
 | 5. Syntax | Done | Highlights from full parses on both sides | 400–600. Actual: about 270, plus 80 of tests. | Medium: mapping highlight layers |
-| 6. Staging | Planned | Index base, `unstaged`/`staged` reviews, stage and unstage, `:review-restore`, `:review-context`, picker jump | 500–800, about 600 of it ported | Low: ported code |
+| 6a. Scopes | Done | Index base, `:review unstaged` and `:review staged` | Actual: about 120, plus 300 ported, plus 100 of tests. | Low: ported code |
+| 6b. Staging | Planned | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported | Low: ported code |
+| 6c. Restore and context | Planned | `:review-restore`, `:review-context` | 150–250 | Low |
+| 6d. Picker key | Planned | A changed-files picker key that jumps into the review at the file's header | 50–100 | Low |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
 | 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
 | 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
@@ -432,6 +435,17 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - The test parses Rust in place, through the bundled grammars, with no runtime.
   The buffer-tree path and the background parse have no test of their own. The integration tests can't see colors.
 
+### 6.7 Phase 6a: found
+
+- Phase 6 split into 6a–6d, one line each, as `AGENTS.md` asks of a phase.
+- `git/index.rs` and its facade came back from `archive/diff-review` with only their module comments and tags changed. Reading the index needs no `git` binary.
+- The scope lives on the stream. `:review` with no scope switches to the open review. A different scope reads the changes again, keeping the place of every row that still stands for the same line.
+- A staged review's sources are the index, so it never takes a file's buffer, never follows one, and lends no buffer's tree for syntax.
+  `Enter` still opens the file, at the index line's number.
+- An `unstaged` review diffs a conflicted file against `HEAD`, as diff review ruled. The index has no unconflicted version.
+- Each read sets a status that names the scope, since nothing else on screen shows it.
+- Helix prefixes a typable command's error with its name: `'review': 'head' is not one of all, unstaged, or staged`.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -448,9 +462,8 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 ## 8. Open decisions
 
 1. **Relayout timing**, for editing. Live as you type, like Zed (recommended), or deferred until `Esc`, with rows fixed while in insert mode.
-2. **`staged` scope**, for phase 6. Read-only even with editing, since the index isn't a file. The alternative is to drop the `staged` scope.
-3. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
-4. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+2. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
+3. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
 
 Decided, 2026-10-17:
 
@@ -463,6 +476,9 @@ Decided, 2026-10-17:
   A `[keys.review]` table can come later.
 - **The stream is named `[scratch]`.** `Document::display_name` has no hook, and `[review]` would cost a seam in `document.rs`.
 - **`]g`/`[g` select the whole hunk**, removed and added rows, and **`]F`/`[F` put the cursor on a header**.
+- **Staging takes whole hunks**: every hunk the selection touches, not single lines.
+- **`:review staged` stays**, read-only, as HEAD against the index.
+- **The changed-files picker gets a new key** to jump into the review. `Enter` keeps opening the file.
 - **Phases 3–6 run back to back**, one commit each, and the human checks the read-only review at the end.
 - **`Enter` on a gap shows all of its lines**, and opened gaps stay open through edits and `:review-refresh`. Before phase 2, it opened the file.
 - **No hunk header rows** (`@@ -a,b +c,d @@`) at first. The gutter's old and new numbers already place each hunk. A toggle, like Hunk's `m`, can come later.

@@ -4,12 +4,14 @@
 
 use std::path::Path;
 
+use anyhow::anyhow;
 use helix_core::command_line::Args;
+use helix_core::fuzzy::fuzzy_match;
 use helix_core::line_ending::line_end_char_index;
 use helix_core::movement::Direction;
 use helix_core::{encoding, Range, Rope, RopeSlice, Selection};
 use helix_loader::workspace_trust::TrustQuery;
-use helix_vcs::{visible_changes, ChangeKind, ChangeView, DiffProviderRegistry, FileChange};
+use helix_vcs::{index, visible_changes, ChangeKind, ChangeView, DiffProviderRegistry, FileChange};
 use helix_view::document::from_reader;
 use helix_view::document::Mode;
 use helix_view::editor::Action;
@@ -19,27 +21,43 @@ use helix_view::{align_view, current, current_ref, doc, view, Align, Editor};
 use super::{push_jump, Context};
 use crate::compositor;
 use crate::job::Callback;
+use crate::ui::prompt::Completion;
 use crate::ui::PromptEvent;
+
+const SCOPES: [ChangeView; 3] = [ChangeView::All, ChangeView::Unstaged, ChangeView::Staged];
 
 pub(super) fn review(
     cx: &mut compositor::Context,
-    _args: Args,
+    args: Args,
     event: PromptEvent,
 ) -> anyhow::Result<()> {
     if event != PromptEvent::Validate {
         return Ok(());
     }
-    let open = cx
-        .editor
-        .review
-        .stream()
-        .map(|stream| stream.doc)
-        .filter(|doc| cx.editor.documents.contains_key(doc));
-    match open {
-        Some(doc) => cx.editor.switch(doc, Action::Replace),
-        None => read_changes(cx),
+    let scope = match args.first() {
+        None => None,
+        Some(name) => Some(
+            SCOPES
+                .into_iter()
+                .find(|scope| scope.label() == name)
+                .ok_or_else(|| anyhow!("'{name}' is not one of all, unstaged, or staged"))?,
+        ),
+    };
+    let open = open_stream(cx.editor).map(|stream| (stream.doc, stream.scope));
+    match (open, scope) {
+        (Some((doc, open)), scope) if scope.is_none_or(|scope| scope == open) => {
+            cx.editor.switch(doc, Action::Replace)
+        }
+        (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All)),
     }
     Ok(())
+}
+
+pub(super) fn complete_scope(_editor: &Editor, input: &str) -> Vec<Completion> {
+    fuzzy_match(input, SCOPES.iter().map(|scope| scope.label()), false)
+        .into_iter()
+        .map(|(label, _)| ((0..), label.into()))
+        .collect()
 }
 
 pub(super) fn review_refresh(
@@ -48,21 +66,24 @@ pub(super) fn review_refresh(
     event: PromptEvent,
 ) -> anyhow::Result<()> {
     if event == PromptEvent::Validate {
-        read_changes(cx);
+        let scope = open_stream(cx.editor).map_or(ChangeView::All, |stream| stream.scope);
+        read_changes(cx, scope);
     }
     Ok(())
 }
 
-/// Lists the changes of the repository the open review shows, or else the one
-/// that holds the current file, or the working directory for a buffer with no
-/// path. Shows them in the stream.
-fn read_changes(cx: &mut compositor::Context) {
-    let open = cx
-        .editor
+fn open_stream(editor: &Editor) -> Option<&Stream> {
+    editor
         .review
         .stream()
-        .filter(|stream| cx.editor.documents.contains_key(&stream.doc));
-    let root = match open {
+        .filter(|stream| editor.documents.contains_key(&stream.doc))
+}
+
+/// Lists the `scope` changes of the repository the open review shows, or else
+/// the one that holds the current file, or the working directory for a buffer
+/// with no path. Shows them in the stream.
+fn read_changes(cx: &mut compositor::Context, scope: ChangeView) {
+    let root = match open_stream(cx.editor) {
         Some(stream) => stream.root.clone(),
         None => doc!(cx.editor)
             .path()
@@ -95,12 +116,12 @@ fn read_changes(cx: &mut compositor::Context) {
                 }
             }
         }
-        let mut changes = visible_changes(ChangeView::All, &unstaged, &staged);
+        let mut changes = visible_changes(scope, &unstaged, &staged);
         changes.sort_by(|a, b| a.path().cmp(b.path()));
         let files = tokio::task::spawn_blocking(move || {
             changes
                 .into_iter()
-                .map(|change| File::read(&providers, change, trust_full))
+                .map(|change| File::read(&providers, scope, change, trust_full))
                 .collect::<Vec<_>>()
         })
         .await?;
@@ -113,10 +134,14 @@ fn read_changes(cx: &mut compositor::Context) {
             let empty = files.is_empty();
             if !empty || editor.review.stream().is_some() {
                 let sections = files.into_iter().map(|file| file.section(editor)).collect();
-                review::show(editor, root, sections);
+                review::show(editor, root, scope, sections);
             }
-            if empty {
-                editor.set_status("There are no changes to review");
+            match (empty, scope) {
+                (true, ChangeView::All) => editor.set_status("There are no changes to review"),
+                (true, scope) => {
+                    editor.set_status(format!("There are no {} changes to review", scope.label()))
+                }
+                (false, scope) => editor.set_status(format!("Reviewing {} changes", scope.label())),
             }
         };
         Ok(Callback::Editor(Box::new(show)))
@@ -128,30 +153,58 @@ struct File {
     change: FileChange,
     base: Vec<u8>,
     source: Vec<u8>,
+    /// Whether the source is the index, not the file.
+    staged: bool,
 }
 
 impl File {
-    fn read(providers: &DiffProviderRegistry, change: FileChange, trust_full: bool) -> File {
+    /// `scope`'s sides of `change`: `HEAD` or the index against the file, or
+    /// `HEAD` against the index.
+    fn read(
+        providers: &DiffProviderRegistry,
+        scope: ChangeView,
+        change: FileChange,
+        trust_full: bool,
+    ) -> File {
         let base_path = match &change {
             FileChange::Renamed { from_path, .. } => from_path,
             _ => change.path(),
         };
-        let base = providers
-            .get_diff_base(base_path, trust_full)
-            .unwrap_or_default();
-        let source = match change {
-            FileChange::Deleted { .. } => Vec::new(),
+        let head = |path: &Path| {
+            providers
+                .get_diff_base(path, trust_full)
+                .unwrap_or_default()
+        };
+        let index = |path: &Path| {
+            index::get_index_base(path, trust_full)
+                .inspect_err(|err| log::debug!("failed to read the index version: {err:#}"))
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        };
+        let base = match (scope, &change) {
+            // WHY: a conflicted file has no unconflicted index version.
+            (ChangeView::Unstaged, FileChange::Conflict { .. }) => head(base_path),
+            (ChangeView::Unstaged, _) => index(base_path),
+            (ChangeView::All | ChangeView::Staged, _) => head(base_path),
+        };
+        let source = match (scope, &change) {
+            (_, FileChange::Deleted { .. }) => Vec::new(),
+            (ChangeView::Staged, _) => index(change.path()),
             _ => std::fs::read(change.path()).unwrap_or_default(),
         };
         File {
             change,
             base,
             source,
+            staged: scope == ChangeView::Staged,
         }
     }
 
     fn section(self, editor: &Editor) -> Section {
-        let doc = editor.document_by_path(self.change.path());
+        let doc = editor
+            .document_by_path(self.change.path())
+            .filter(|_| !self.staged);
         let content =
             if crate::is_binary(&self.base) || (doc.is_none() && crate::is_binary(&self.source)) {
                 Content::Binary

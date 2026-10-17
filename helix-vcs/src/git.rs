@@ -22,6 +22,8 @@ use crate::{ChangeKind, FileChange};
 #[cfg(test)]
 mod test;
 
+pub(crate) mod index; // FORK: review-stream
+
 #[inline]
 fn get_repo_dir(file: &Path) -> Result<&Path> {
     file.parent().context("file has no parent directory")

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use helix_core::Language;
 use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
-use helix_vcs::FileChange;
+use helix_vcs::{ChangeView, FileChange};
 
 use crate::editor::Action;
 use crate::{align_view, view, Align, DocumentId, Editor, ViewId};
@@ -119,6 +119,9 @@ pub struct Stream {
     pub doc: DocumentId,
     /// The directory the changes were listed from.
     pub root: PathBuf,
+    /// The changes it shows. A `Staged` stream's sources are the index, not
+    /// the files, so it never follows a file's buffer.
+    pub scope: ChangeView,
     files: Vec<File>,
     /// One per line of the buffer.
     pub rows: Vec<Row>,
@@ -372,7 +375,7 @@ fn header(change: &FileChange, note: Option<&str>) -> String {
     }
 }
 
-pub fn show(editor: &mut Editor, root: PathBuf, sections: Vec<Section>) {
+pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec<Section>) {
     let open = editor
         .review
         .stream
@@ -383,6 +386,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, sections: Vec<Section>) {
         editor.switch(doc, Action::Replace);
         if let Some(stream) = editor.review.stream.as_mut() {
             stream.root = root;
+            stream.scope = scope;
         }
         update(editor, sections.into_iter().map(File::from).collect(), None);
         return;
@@ -394,6 +398,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, sections: Vec<Section>) {
     editor.review.stream = Some(Stream {
         doc: doc_id,
         root,
+        scope,
         files: Vec::new(),
         rows: Vec::new(),
         text: doc.text().clone(),
@@ -441,9 +446,15 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
         return;
     };
     let loader = editor.syn_loader.load();
+    let staged = editor
+        .review
+        .stream
+        .as_ref()
+        .is_some_and(|stream| stream.scope == ChangeView::Staged);
     for file in &mut files {
         file.seen = editor
             .document_by_path(file.change.path())
+            .filter(|_| !staged)
             .map(|doc| (doc.id(), doc.version()));
         if let Content::Text { source, .. } = &file.content {
             file.language = loader
@@ -607,6 +618,7 @@ mod tests {
         Stream {
             doc: DocumentId::default(),
             root: PathBuf::new(),
+            scope: ChangeView::All,
             files,
             rows: layout.rows,
             text: Rope::from(layout.text.as_str()),

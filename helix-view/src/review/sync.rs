@@ -6,6 +6,8 @@ use std::path::Path;
 
 use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
+use helix_vcs::ChangeView;
+
 use super::{update, Content};
 use crate::document::{from_reader, Mode};
 use crate::tree::Tree;
@@ -110,6 +112,9 @@ fn follow_sources(editor: &mut Editor, doc_id: DocumentId) -> bool {
     let Some(stream) = editor.review.stream.as_ref() else {
         return false;
     };
+    if stream.scope == ChangeView::Staged {
+        return false;
+    }
     let mut files = None;
     for (index, file) in stream.files.iter().enumerate() {
         let Content::Text { base, .. } = &file.content else {

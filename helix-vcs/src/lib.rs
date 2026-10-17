@@ -18,6 +18,8 @@ pub use diff::{DiffHandle, Hunk};
 
 mod status;
 
+pub mod index; // FORK: review-stream
+
 pub use status::{visible_changes, ChangeKind, ChangeView, FileChange};
 
 /// Contains all active diff providers. Diff providers are compiled in via features. Currently
