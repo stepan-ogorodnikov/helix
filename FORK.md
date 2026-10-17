@@ -98,12 +98,13 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active, phases 1–5 and 6a of `fork/review-stream.md`.
+- Status: active, phases 1–5 and 6a–6b of `fork/review-stream.md`.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one read-only buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit in it is put back. `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.
+  `:stage-hunk` and `:unstage-hunk` write the hunks the selection touches to the index through the `git` binary, in a trusted workspace.
   Rows get syntax colors from parses of each file's whole base and source.
   Removed and added rows get tints, headers a rule, and changed words a mark, from theme scopes: `diff.{plus,minus}.view`, `diff.delta.view.text`, and the fork's `ui.review.header` and `ui.review.gap`.
 - Upstream files:
@@ -114,18 +115,19 @@ The hooks run on commit.
   - `helix-term/src/ui/editor.rs`: the `review_keys` field and its default, the keymap swap at the top of `handle_event`, `review::sync` at the top of `render`, and the review's decoration and overlays in `render_view`.
   - `helix-term/src/ui/text_decorations.rs`: `pub mod review;`.
   - `helix-term/src/commands.rs`: `mod review;`, the `review_*` rows, and their wrappers.
-  - `helix-term/src/commands/typed.rs`: the `:review` and `:review-refresh` rows.
+  - `helix-term/src/commands/typed.rs`: the `:review`, `:review-refresh`, `:stage-hunk`, and `:unstage-hunk` rows.
   - `helix-term/src/keymap.rs`: `pub mod review;`.
   - `helix-term/tests/integration.rs`: `mod fork_review;`.
   - `helix-vcs/src/git.rs`: `pub(crate) mod index;`. `helix-vcs/src/lib.rs`: `pub mod index;`.
   - `book/src/keymap.md` (Review), `book/src/themes.md` (the review's scopes), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
-- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,gutter,sync,syntax,words}.rs`, `helix-term/src/commands/review.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs`.
-- Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/syntax.rs`, `review/words.rs`, and `helix-vcs/src/git/index.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
+- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,gutter,sync,syntax,words}.rs`, `helix-term/src/commands/review.rs` and `review/stage.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs`.
+- Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/syntax.rs`, `review/words.rs`, `helix-vcs/src/git/index.rs`, and `commands/review/stage.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
 - Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
   #9951 and #16252 rewrite the diff-base code in `git.rs` and `lib.rs`. Both open.
 - Drop when: upstream ships a multi-file diff view in one buffer.
 - Rulings:
   - The dropped diff review feature's plan and code stay under the local tag `archive/diff-review`. The tag is never pushed.
+  - Staging runs the `git` binary: `git hash-object --path` and `git update-index`, which convert text the way `git add` does. Upstream reads diffs with gix only and never needs it.
   - The stream keeps itself read-only from `render`, not from event hooks, so one check catches edits from keys, typable commands, and paste before they're drawn.
   - The stream sets `gutters.line_numbers.min_width` on the views that show it, because `GutterType::width` gets no `&Editor`.
   - The condition in `Editor::switch` was approved as the one seam inside an upstream function in a hot file. Without it, switching away deletes the stream, an unmodified buffer with no path.

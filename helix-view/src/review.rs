@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use helix_core::encoding::Encoding;
 use helix_core::Language;
 use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange};
@@ -85,6 +86,8 @@ impl Row {
 pub struct Section {
     pub change: FileChange,
     pub content: Content,
+    /// The source's encoding, which staging writes the index in.
+    pub encoding: &'static Encoding,
 }
 
 #[derive(Clone)]
@@ -201,6 +204,7 @@ impl Ranges {
 struct File {
     change: FileChange,
     content: Content,
+    encoding: &'static Encoding,
     /// The open buffer the source came from, and its version then.
     seen: Option<(DocumentId, i32)>,
     /// Source lines whose gap was opened.
@@ -214,12 +218,23 @@ impl From<Section> for File {
         File {
             change: section.change,
             content: section.content,
+            encoding: section.encoding,
             seen: None,
             opened: Vec::new(),
             language: None,
             trees: syntax::Trees::default(),
         }
     }
+}
+
+/// The hunks a selection touches in one file.
+pub struct Picked<'a> {
+    pub change: &'a FileChange,
+    pub source: &'a Rope,
+    pub encoding: &'static Encoding,
+    /// Each hunk's source lines, first and last. A removal stands on the line
+    /// below it.
+    pub lines: Vec<(usize, usize)>,
 }
 
 /// Where `ret` on a row opens its file.
@@ -234,6 +249,45 @@ pub struct Target<'a> {
 impl Stream {
     pub fn hunks(&self) -> Vec<Range<usize>> {
         hunks(&self.rows)
+    }
+
+    /// The hunks that `rows`, pairs of first and last rows, touch, by file.
+    pub fn picked(&self, rows: &[(usize, usize)]) -> Vec<Picked<'_>> {
+        let mut picked: Vec<Picked> = Vec::new();
+        for hunk in self.hunks() {
+            if !rows
+                .iter()
+                .any(|&(first, last)| hunk.start <= last && first < hunk.end)
+            {
+                continue;
+            }
+            let file = self.rows[hunk.start].file();
+            let Content::Text { source, .. } = &self.files[file].content else {
+                continue;
+            };
+            let added: Vec<usize> = self.rows[hunk.clone()]
+                .iter()
+                .filter_map(|row| row.lines().1)
+                .collect();
+            let lines = match (added.first(), added.last()) {
+                (Some(&first), Some(&last)) => (first, last),
+                _ => {
+                    let below = self.line_below(hunk.start);
+                    (below, below)
+                }
+            };
+            let change = &self.files[file].change;
+            match picked.last_mut() {
+                Some(last) if std::ptr::eq(last.change, change) => last.lines.push(lines),
+                _ => picked.push(Picked {
+                    change,
+                    source,
+                    encoding: self.files[file].encoding,
+                    lines: vec![lines],
+                }),
+            }
+        }
+        picked
     }
 
     pub fn headers(&self) -> impl Iterator<Item = usize> + '_ {
@@ -384,11 +438,17 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         .filter(|doc| editor.documents.contains_key(doc));
     if let Some(doc) = open {
         editor.switch(doc, Action::Replace);
+        let mut was_empty = false;
         if let Some(stream) = editor.review.stream.as_mut() {
             stream.root = root;
             stream.scope = scope;
+            was_empty = stream.rows.is_empty();
         }
         update(editor, sections.into_iter().map(File::from).collect(), None);
+        // WHY: rows inserted into an empty stream push the cursor past them.
+        if was_empty {
+            to_top(editor, doc);
+        }
         return;
     }
 
@@ -408,8 +468,15 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         ranges: Ranges::default(),
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
+    to_top(editor, doc_id);
+}
+
+fn to_top(editor: &mut Editor, doc: DocumentId) {
     let view = editor.tree.get(editor.tree.focus);
-    let doc = editor.documents.get_mut(&doc_id).expect("just opened");
+    let doc = editor
+        .documents
+        .get_mut(&doc)
+        .expect("the stream's buffer is open");
     doc.set_selection(view.id, Selection::point(0));
     align_view(doc, view, Align::Top);
 }
@@ -557,6 +624,7 @@ mod tests {
                 base: Rope::from(base),
                 source: Rope::from(source),
             },
+            encoding: helix_core::encoding::UTF_8,
         }
     }
 
@@ -574,6 +642,7 @@ mod tests {
                     path: PathBuf::from("c.bin"),
                 },
                 content: Content::Binary,
+                encoding: helix_core::encoding::UTF_8,
             },
         ]));
         assert_eq!(
@@ -677,6 +746,7 @@ mod tests {
                     base: Rope::new(),
                     source: Rope::from("new\n"),
                 },
+                encoding: helix_core::encoding::UTF_8,
             },
         ]);
         let target = |row| {

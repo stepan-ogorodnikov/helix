@@ -4084,6 +4084,30 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
     },
     // FORK: review-stream
     TypableCommand {
+        name: "stage-hunk",
+        aliases: &[],
+        doc: "Stage the hunks the selections touch in the review",
+        fun: super::review::stage_hunk,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    // FORK: review-stream
+    TypableCommand {
+        name: "unstage-hunk",
+        aliases: &[],
+        doc: "Unstage the hunks the selections touch in the review",
+        fun: super::review::unstage_hunk,
+        completer: CommandCompleter::none(),
+        signature: Signature {
+            positionals: (0, Some(0)),
+            ..Signature::DEFAULT
+        },
+    },
+    // FORK: review-stream
+    TypableCommand {
         name: "review-refresh",
         aliases: &[],
         doc: "List the changed files again and read them from disk, keeping the review's place",

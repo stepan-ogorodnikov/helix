@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 6a done 2026-10-17. Phases 6b–6d follow without a stop, as the human asked.
+Status: phase 6b done 2026-10-17. Phases 6c–6d follow without a stop, as the human asked.
 
 ## Bottom line
 
@@ -329,7 +329,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 4. Look | Done | Row tints, header and gap decorations, word highlights | 200–400. Actual: about 300, of it 130 ported, plus 100 of tests. | Low |
 | 5. Syntax | Done | Highlights from full parses on both sides | 400–600. Actual: about 270, plus 80 of tests. | Medium: mapping highlight layers |
 | 6a. Scopes | Done | Index base, `:review unstaged` and `:review staged` | Actual: about 120, plus 300 ported, plus 100 of tests. | Low: ported code |
-| 6b. Staging | Planned | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported | Low: ported code |
+| 6b. Staging | Done | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported. Actual: about 230, of it 130 ported, plus 150 of tests. | Low: ported code |
 | 6c. Restore and context | Planned | `:review-restore`, `:review-context` | 150–250 | Low |
 | 6d. Picker key | Planned | A changed-files picker key that jumps into the review at the file's header | 50–100 | Low |
 | **Editing, if it works out** | | | **1.1–1.7k** | |
@@ -445,6 +445,17 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - An `unstaged` review diffs a conflicted file against `HEAD`, as diff review ruled. The index has no unconflicted version.
 - Each read sets a status that names the scope, since nothing else on screen shows it.
 - Helix prefixes a typable command's error with its name: `'review': 'head' is not one of all, unstaged, or staged`.
+
+### 6.8 Phase 6b: found
+
+- The review picks hunks by its own rows: every review hunk the selection touches. Each becomes its source lines, first and last, and a removal the line below it.
+  From there diff review's code runs as it did on a buffer's lines: it diffs the index against the source and stages the hunks under those lines.
+- The source is the review's own: a buffer's text, unsaved edits included, as in diff review, or the index in a staged review, where `:stage-hunk` finds nothing to stage.
+- `:unstage-hunk` maps the lines to `HEAD`'s through the `HEAD`-to-source diff, so it works the same in all three scopes.
+- Both read the review again afterwards, so a staged hunk leaves an `unstaged` review and joins a `staged` one. The status after the read says what they did, unless the review is now empty.
+- Rows that refill an empty stream pushed the cursor past them, and `]g` then found nothing. A stream that was empty starts at the top again, like a new one.
+- Staging writes in the source's encoding, which `Section` now carries, and keeps the index version's byte order mark.
+- `run_until` in the tests names the status when it gives up. A wait for the index alone can pass before the review's read lands.
 
 ## 7. Risks
 

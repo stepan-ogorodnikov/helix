@@ -87,7 +87,10 @@ async fn run_until(
             return Ok(());
         }
     }
-    bail!("`{keys}` never finished")
+    bail!(
+        "`{keys}` never finished. The status says: {:?}",
+        status(app)
+    )
 }
 
 async fn start_review(app: &mut Application) -> anyhow::Result<()> {
@@ -665,4 +668,120 @@ async fn review_names_the_scopes_it_knows() -> anyhow::Result<()> {
         false,
     )
     .await
+}
+
+/// The index version of `name`, or `None` when the index doesn't have it.
+fn index_text(repo: &TempDir, name: &str) -> Option<String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["show", &format!(":{name}")])
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_INDEX_FILE")
+        .output()
+        .unwrap();
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8(output.stdout).unwrap())
+}
+
+/// `a.txt` with its first and last lines changed: two hunks.
+fn ends_changed() -> TempDir {
+    repo(
+        &[("a.txt", "a1\na2\na3\n")],
+        &[("a.txt", Some("A1\na2\nA3\n"))],
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn staging_takes_the_selected_hunk_out_of_an_unstaged_review() -> anyhow::Result<()> {
+    let repo = ends_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    run_until(&mut app, ":review unstaged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+    run_until(&mut app, "]g:stage-hunk<ret>", |app| {
+        status(app) == "Staged 1 change" && !stream_text(app).contains("a1")
+    })
+    .await?;
+    assert_eq!(index_text(&repo, "a.txt").unwrap(), "A1\na2\na3\n");
+    assert_eq!(stream_text(&app), review_of(&file, "A1\na2\na3\nA3\n"));
+
+    test_key_sequence(
+        &mut app,
+        Some("gg:stage-hunk<ret>"),
+        Some(&|app| {
+            assert_eq!(
+                status(app),
+                "'stage-hunk': There are no unstaged changes under any selection"
+            );
+        }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unstaging_puts_back_the_head_text() -> anyhow::Result<()> {
+    let repo = ends_changed();
+    git(repo.path(), &["add", "a.txt"]);
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    run_until(&mut app, ":review staged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+    let staged_first_line = review_of(&file, "a1\nA1\na2\na3\n");
+    run_until(&mut app, "]G:unstage-hunk<ret>", |app| {
+        stream_text(app) == staged_first_line
+    })
+    .await?;
+    assert_eq!(status(&app), "Unstaged 1 change");
+    assert_eq!(index_text(&repo, "a.txt").unwrap(), "A1\na2\na3\n");
+
+    // WHY: wait for the read, or `[G` runs in the staged review.
+    run_until(&mut app, ":review all<ret>", |app| {
+        status(app) == "Reviewing all changes"
+    })
+    .await?;
+    run_until(&mut app, "[G:unstage-hunk<ret>", |app| {
+        status(app) == "Unstaged 1 change"
+    })
+    .await?;
+    assert_eq!(
+        index_text(&repo, "a.txt").unwrap(),
+        "a1\na2\na3\n",
+        "an `all` review unstages too"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_file_can_be_staged_and_unstaged() -> anyhow::Result<()> {
+    let repo = repo(&[("a.txt", "a1\n")], &[("c.txt", Some("c1\nc2\n"))]);
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    run_until(&mut app, ":review unstaged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+    run_until(&mut app, "]g:stage-hunk<ret>", |app| {
+        status(app) == "There are no unstaged changes to review"
+    })
+    .await?;
+    assert_eq!(index_text(&repo, "c.txt").unwrap(), "c1\nc2\n");
+    assert_eq!(stream_text(&app), "");
+
+    run_until(&mut app, ":review staged<ret>", |app| {
+        stream_text(app).contains("c1")
+    })
+    .await?;
+    run_until(&mut app, "]g:unstage-hunk<ret>", |app| {
+        status(app) == "There are no staged changes to review"
+    })
+    .await?;
+    assert_eq!(index_text(&repo, "c.txt"), None);
+    Ok(())
 }

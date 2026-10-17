@@ -18,6 +18,10 @@ use helix_view::editor::Action;
 use helix_view::review::{self, Content, Row, Section, Stream};
 use helix_view::{align_view, current, current_ref, doc, view, Align, Editor};
 
+mod stage;
+
+pub(super) use stage::{stage_hunk, unstage_hunk};
+
 use super::{push_jump, Context};
 use crate::compositor;
 use crate::job::Callback;
@@ -48,7 +52,7 @@ pub(super) fn review(
         (Some((doc, open)), scope) if scope.is_none_or(|scope| scope == open) => {
             cx.editor.switch(doc, Action::Replace)
         }
-        (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All)),
+        (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All), None),
     }
     Ok(())
 }
@@ -67,7 +71,7 @@ pub(super) fn review_refresh(
 ) -> anyhow::Result<()> {
     if event == PromptEvent::Validate {
         let scope = open_stream(cx.editor).map_or(ChangeView::All, |stream| stream.scope);
-        read_changes(cx, scope);
+        read_changes(cx, scope, None);
     }
     Ok(())
 }
@@ -81,8 +85,8 @@ fn open_stream(editor: &Editor) -> Option<&Stream> {
 
 /// Lists the `scope` changes of the repository the open review shows, or else
 /// the one that holds the current file, or the working directory for a buffer
-/// with no path. Shows them in the stream.
-fn read_changes(cx: &mut compositor::Context, scope: ChangeView) {
+/// with no path. Shows them in the stream, then `done` in the status line.
+fn read_changes(cx: &mut compositor::Context, scope: ChangeView, done: Option<String>) {
     let root = match open_stream(cx.editor) {
         Some(stream) => stream.root.clone(),
         None => doc!(cx.editor)
@@ -136,12 +140,15 @@ fn read_changes(cx: &mut compositor::Context, scope: ChangeView) {
                 let sections = files.into_iter().map(|file| file.section(editor)).collect();
                 review::show(editor, root, scope, sections);
             }
-            match (empty, scope) {
-                (true, ChangeView::All) => editor.set_status("There are no changes to review"),
-                (true, scope) => {
+            match (empty, scope, done) {
+                (true, ChangeView::All, _) => editor.set_status("There are no changes to review"),
+                (true, scope, _) => {
                     editor.set_status(format!("There are no {} changes to review", scope.label()))
                 }
-                (false, scope) => editor.set_status(format!("Reviewing {} changes", scope.label())),
+                (false, _, Some(done)) => editor.set_status(done),
+                (false, scope, None) => {
+                    editor.set_status(format!("Reviewing {} changes", scope.label()))
+                }
             }
         };
         Ok(Callback::Editor(Box::new(show)))
@@ -205,14 +212,14 @@ impl File {
         let doc = editor
             .document_by_path(self.change.path())
             .filter(|_| !self.staged);
+        let (source, encoding) = match doc {
+            Some(doc) => (doc.text().clone(), doc.encoding()),
+            None => decode(&self.source, None),
+        };
         let content =
             if crate::is_binary(&self.base) || (doc.is_none() && crate::is_binary(&self.source)) {
                 Content::Binary
             } else {
-                let (source, encoding) = match doc {
-                    Some(doc) => (doc.text().clone(), doc.encoding()),
-                    None => decode(&self.source, None),
-                };
                 Content::Text {
                     base: decode(&self.base, Some(encoding)).0,
                     source,
@@ -221,6 +228,7 @@ impl File {
         Section {
             change: self.change,
             content,
+            encoding,
         }
     }
 }

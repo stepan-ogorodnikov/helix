@@ -258,6 +258,7 @@ mod tests {
                 base: Rope::from(base),
                 source: Rope::from(source),
             },
+            encoding: helix_core::encoding::UTF_8,
         });
         file.language = Some(language);
         let stream = crate::review::tests::stream_of(vec![file]);
