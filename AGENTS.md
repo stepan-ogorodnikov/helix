@@ -49,7 +49,13 @@ Move tests with the body. Remove imports the hot file no longer uses.
 
 ## Plans
 
-A fork feature's plan lives in `fork/<feature>.md`. Commit the plan before the code. Each phase's commit marks the phase done in the plan and records what the work found.
+A fork feature that takes more than one commit gets a plan in `fork/<feature>.md`. A small fix doesn't.
+
+Ask the human every question whose answer changes the plan, like scope, order, or approach, instead of guessing. Commit the plan before the code. Implement only after the human approves the plan and asks for the work.
+
+Each phase is one commit that builds and passes its tests. Order the phases so each starts from what the previous one left, and put the riskiest as early as its dependencies allow. If a phase's subject can't say what it does in one line, split it. Book pages ride with the phase that makes them true.
+
+Each phase's commit marks the phase done in the plan and records what the work found.
 
 ## Guides
 

@@ -55,7 +55,7 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | 7 | Done | Add the testing and manual-verify guides. | `agents/TESTING.md` and `agents/VERIFY.md`. |
 | 8 | Done | Add the review guide. | `agents/REVIEW.md`. |
 | 9 | Done | Add the rebase playbook. | `agents/REBASE.md`. |
-| 10 | | Write down how a plan is split and approved. | `AGENTS.md` §Plans, from koloda's `IMPLEMENTATION-PLAN.md`. |
+| 10 | Done | Write down how a plan is split and approved. | `AGENTS.md` §Plans, from koloda's `IMPLEMENTATION-PLAN.md`. |
 
 Next, out of this plan's scope:
 
@@ -86,3 +86,5 @@ Next, out of this plan's scope:
 - The rebase happens on `fork` itself, not on the report's `rebase/YYYY-MM` branch. The `pre-rebase-YYYY-MM` tag already keeps the old stack.
 - `land.sh --check` checks trailers on all of `master..fork` and skips the `origin/fork` ancestry check, so it works on a rebased stack before the force-push.
 - `REBASE.md` keeps `master` and the tags local while Actions are on for the GitHub fork. Pushing either would start upstream's workflows there.
+- `AGENTS.md` §Plans keeps koloda's approval step, one commit per phase, and risk-first ordering.
+  It drops the task file's Status, Guides, and Flow lines, and the `Commit:` line for each item.
