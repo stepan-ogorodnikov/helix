@@ -47,8 +47,8 @@ Each commit updates the `fork-infra` ledger entry and marks its item done here.
 | --- | --- | --- | --- |
 | 0 | Done | None, a history rewrite | `Patch:` trailers on every commit. Split "Move fork command logic out of the hot upstream files." into one commit per feature. Reword the two `picker:` subjects. Force-push the rewritten copies of the three pushed commits. |
 | 1 | Done | Add the fork infrastructure plan. | This file. |
-| 2 | | Give the cycle-changes hook a type alias. | `ui/picker.rs`, with `Patch: changed-files-views`. Workspace clippy passes with `-D warnings`. |
-| 3 | | Write down the fork's git rules. | `AGENTS.md`: branches, no contact with upstream, commit style, the `Patch:` trailer, opt-in features. `FORK.md`: branches, setup, build, and `--grep` in place of commit lists. |
+| 2 | Done | Give the cycle-changes hook a type alias. | `ui/picker.rs`, with `Patch: changed-files-views`. Workspace clippy passes with `-D warnings`. |
+| 3 | Done | Write down the fork's git rules. | `AGENTS.md`: branches, no contact with upstream, commit style, the `Patch:` trailer, opt-in features. `FORK.md`: branches, setup, build, and `--grep` in place of commit lists. |
 | 4 | | Add commit hooks for formatting, clippy, and the Patch trailer. | `tools/fork/hooks/pre-commit` and `commit-msg`, and their setup line in `FORK.md`. |
 | 5 | | Add a land script that gates and fast-forwards fork. | `tools/fork/land.sh`, and the push rule in `AGENTS.md`. |
 | 6 | | Add the upstream conventions guide. | `agents/HELIX.md`: upstream docs and CI checks, MSRV, where to start, comment tags with `FORK:`, change discipline. `document.rs` joins the hot list. |
@@ -67,3 +67,5 @@ Next, out of this plan's scope:
 - Item 0: the combined move commit split cleanly, because its halves touch disjoint files. The first half builds alone.
   Replayed commits keep their author dates. The tree after the rewrite matched the old one exactly.
 - `git log --grep '^Patch: <slug>$'` matches only the trailer line, because `--grep` anchors at line boundaries.
+- Item 2's commit carries `Patch: changed-files-views`, so item 3 marked it done here.
+- Ledger entries became `###` headings under `## Patches`, so the branch, setup, and build sections sit beside them.

@@ -4,14 +4,36 @@ What this fork changes against upstream Helix, one entry per feature.
 `AGENTS.md` has the rules for writing fork code. `fork/<feature>.md` has a feature's plan.
 
 Update a feature's entry in the same commit as the feature.
+An entry's heading is the `Patch:` trailer on its commits, so `git log master..fork --grep '^Patch: <slug>$'` lists them.
 At a rebase, check each entry's "Drop when" against upstream, and drop the feature's commits when it holds.
 
 Upstream base: `master` at `ba40e547`.
 
-## picker-keys
+## Branches
+
+- `master` mirrors `upstream/master`. Nothing else commits to it.
+- `fork` is `master` plus the patches below. It's the branch to build.
+- `origin/fork` only fast-forwards, except when the stack moves onto a new upstream.
+
+## Setup
+
+In a new clone:
+
+```sh
+git remote add upstream https://github.com/helix-editor/helix.git
+gh repo set-default stepan-ogorodnikov/helix
+```
+
+## Build
+
+`cargo install --path helix-term --locked` installs `hx` from the checkout.
+`book/src/building-from-source.md` says how to point it at the `runtime` directory.
+
+## Patches
+
+### picker-keys
 
 - Status: active.
-- Commits: `a437d59f`, `eb31e577`.
 - Adds: `[keys.picker]` in `config.toml`.
   The built-in picker bindings stay, entries override them, and `nop` returns a key to the query prompt.
 - Upstream files:
@@ -26,10 +48,9 @@ Upstream base: `master` at `ba40e547`.
 - Rulings: the key table lives outside `editor.rs`. Only the field and the re-export stay there.
 - Gaps: the seams in `config.rs` and `ui/picker.rs` have no `FORK:` markers.
 
-## changed-files-views
+### changed-files-views
 
 - Status: active.
-- Commits: `1d1a31e0`, `3b978617`.
 - Adds: the changed-files picker (`Space g`) lists unstaged, staged, or all changes.
   It opens on unstaged. `Ctrl-g` (`cycle_changes`) cycles the list, and the current list shows beside the match count.
 - Upstream files:
@@ -47,10 +68,9 @@ Upstream base: `master` at `ba40e547`.
 - Gaps: the seams in the `helix-vcs` files and `ui/picker.rs` have no `FORK:` markers.
   Expect conflicts in `git.rs` and `lib.rs` when #9951 or #16252 merges.
 
-## yank-diagnostics
+### yank-diagnostics
 
 - Status: active.
-- Commits: `e117b0d4`, `3b978617`.
 - Adds: `:yank-diagnostics` copies every diagnostic in the buffer as `path:line:col: severity: message`, to the clipboard by default.
   Upstream's `:yank-diagnostic` only copies the ones under the cursor.
 - Upstream files:
@@ -61,9 +81,9 @@ Upstream base: `master` at `ba40e547`.
 - Tests: two unit tests in `yank_diagnostics.rs`.
 - Drop when: upstream adds a command that yanks all diagnostics.
 
-## fork-infra
+### fork-infra
 
 - Status: active.
-- Commits: `716c86d5`, plus the commits that add plans and this file.
+- Plan: `fork/fork-infra.md`.
 - Files: `AGENTS.md`, `FORK.md`, `fork/*.md`. All fork-owned. Upstream has never had these paths.
 - Drop when: never.

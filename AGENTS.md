@@ -8,6 +8,22 @@ Hot files:
 - `helix-term/src/commands/typed.rs`
 - `helix-view/src/editor.rs`
 
+A fork feature is opt-in or additive. Upstream defaults and config keep their meaning, so any feature can be dropped. Inside fork code, update the call sites and delete the old code instead of keeping a shim.
+
+## Git
+
+`master` mirrors `upstream/master`. Never commit to it. `fork` is `master` plus the fork's commits. Commit there.
+
+Never push to `helix-editor/helix`, and never open or comment on its pull requests and issues.
+
+In a fork clone, `gh` picks the parent repository until `gh repo set-default stepan-ogorodnikov/helix` has run. Check `gh repo set-default --view` before using `gh`.
+
+## Commits
+
+Write the subject in the imperative and in sentence case, end it with a period, and leave out upstream's `area:` prefix. Say why in the body.
+
+End every commit on `fork` with one `Patch: <slug>` trailer, where the slug names a `FORK.md` entry. A commit serves one feature, so the feature can be dropped by its commits. `git log master..fork --grep '^Patch: <slug>$'` lists them.
+
 ## Hooks
 
 Mark each hook with `// FORK:` so a search lists every seam.
