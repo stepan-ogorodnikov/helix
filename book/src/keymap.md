@@ -471,11 +471,22 @@ The gutter shows each row's old and new line numbers, then `+` for an added line
 Normal and select mode keys work in the review, but an edit is put back.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
 With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
-The review adds these keys:
+The review swaps these commands for its own, on whatever keys they're bound to:
 
-| Key     | Command       | Description                                                                                                  |
-| -----   | -----         | -------------                                                                                                |
-| `Enter` | `review_open` | Open the row's file at that line, to edit it. `Ctrl-o` comes back. On a row of unchanged lines, show them   |
+| Key  | Command             | In the review                              |
+| ---- | -----               | -------------                              |
+| `]g` | `goto_next_change`  | `review_next_hunk`: select the next hunk, in any file |
+| `[g` | `goto_prev_change`  | `review_prev_hunk`: select the previous hunk |
+| `]G` | `goto_last_change`  | `review_last_hunk`: select the last hunk   |
+| `[G` | `goto_first_change` | `review_first_hunk`: select the first hunk |
+
+And it adds these keys:
+
+| Key     | Command            | Description                                                                                                 |
+| -----   | -----              | -------------                                                                                               |
+| `Enter` | `review_open`      | Open the row's file at that line, to edit it. `Ctrl-o` comes back. On a row of unchanged lines, show them  |
+| `]F`    | `review_next_file` | Go to the next file's header                                                                                |
+| `[F`    | `review_prev_file` | Go to the header of the file the cursor is in, or the one before                                            |
 
 ## Picker
 

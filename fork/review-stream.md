@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 2 done 2026-10-17. Phase 3 starts when the human asks for it.
+Status: phase 3 done 2026-10-17. Phases 4–6 follow without a stop, as the human asked.
 
 ## Bottom line
 
@@ -325,7 +325,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | **Read-only review** | | | **2.5–3.8k** | |
 | 1. Read-only stream | Done | Layout, stream document, row table, gutter, `:review` against `HEAD`, the read-only guard, the keymap overlay, `ret` to the file. Headers and gaps as plain text. | 900–1,200. Actual: about 820, plus 580 of tests. | Medium: render seams, row math, the guard |
 | 2. Keep it current | Done | Reconcile by identity, stale files re-diffed after each command, gaps that open, `:review-refresh`, `:review` switching to the open stream | 300–500. Actual: about 400, plus 310 of tests. | **High**: the cursor while rows appear and vanish |
-| 3. Navigation | Planned | Hunk and file motions across files | 150–300 | Low |
+| 3. Navigation | Done | Hunk and file motions across files | 150–300. Actual: about 180, plus 90 of tests. | Low |
 | 4. Look | Planned | Row tints, header and gap decorations, word highlights | 200–400 | Low |
 | 5. Syntax | Planned | Highlights from full parses on both sides | 400–600 | Medium: mapping highlight layers |
 | 6. Staging | Planned | Index base, `unstaged`/`staged` reviews, stage and unstage, `:review-restore`, `:review-context`, picker jump | 500–800, about 600 of it ported | Low: ported code |
@@ -393,6 +393,13 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
 - A file whose buffer opens with the same text costs one relayout of the whole stream, and no change to the buffer.
 - With a review open, `:review` no longer lists the changes. `:review-refresh` does.
 
+### 6.4 Phase 3: found
+
+- `]g`/`[g` follow the rules of `]g` in a file: the next hunk starts below the cursor's row, the previous one ends above it. They select the hunk's removed and added rows, and extend in select mode.
+- `]F` puts the cursor on the next header. `[F` from inside a file goes to that file's own header first, as `[[` does in vim.
+- The stream keymap walks the user's keymap and swaps `goto_{next,prev,first,last}_change` for the review's versions, in sequences too. A custom key for them carries over, and the infobox shows the review's descriptions.
+- A hunk is a run of removed and added rows. A header always separates two files' hunks, so hunks never span files.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -423,6 +430,8 @@ Decided, 2026-10-17:
 - **The stream's keys are fixed at first.** They replace commands, not keys, so your bindings for `goto_next_change` and the like still apply.
   A `[keys.review]` table can come later.
 - **The stream is named `[scratch]`.** `Document::display_name` has no hook, and `[review]` would cost a seam in `document.rs`.
+- **`]g`/`[g` select the whole hunk**, removed and added rows, and **`]F`/`[F` put the cursor on a header**.
+- **Phases 3–6 run back to back**, one commit each, and the human checks the read-only review at the end.
 - **`Enter` on a gap shows all of its lines**, and opened gaps stay open through edits and `:review-refresh`. Before phase 2, it opened the file.
 - **No hunk header rows** (`@@ -a,b +c,d @@`) at first. The gutter's old and new numbers already place each hunk. A toggle, like Hunk's `m`, can come later.
 

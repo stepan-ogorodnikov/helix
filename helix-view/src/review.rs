@@ -160,6 +160,28 @@ pub struct Target<'a> {
 }
 
 impl Stream {
+    pub fn hunks(&self) -> Vec<Range<usize>> {
+        let mut hunks: Vec<Range<usize>> = Vec::new();
+        for (row, kind) in self.rows.iter().enumerate() {
+            if !matches!(kind, Row::Removed { .. } | Row::Added { .. }) {
+                continue;
+            }
+            match hunks.last_mut() {
+                Some(hunk) if hunk.end == row => hunk.end += 1,
+                _ => hunks.push(row..row + 1),
+            }
+        }
+        hunks
+    }
+
+    pub fn headers(&self) -> impl Iterator<Item = usize> + '_ {
+        self.rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| matches!(row, Row::Header { .. }))
+            .map(|(row, _)| row)
+    }
+
     pub fn gutter_width(&self) -> usize {
         self.widths[0] + 1 + self.widths[1]
     }
@@ -512,6 +534,18 @@ mod tests {
             selections: HashMap::new(),
             widths: layout.widths,
         }
+    }
+
+    #[test]
+    fn hunks_are_runs_of_changed_rows_within_a_file() {
+        let base = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n";
+        let source = "A\nb\nc\nd\ne\nf\ng\nh\ni\n";
+        let stream = stream(vec![
+            modified("one.txt", base, source),
+            modified("two.txt", "x\n", "y\n"),
+        ]);
+        assert_eq!(stream.hunks(), [1..3, 10..12, 13..15]);
+        assert_eq!(stream.headers().collect::<Vec<_>>(), [0, 12]);
     }
 
     #[test]

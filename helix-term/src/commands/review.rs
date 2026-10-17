@@ -6,13 +6,15 @@ use std::path::Path;
 
 use helix_core::command_line::Args;
 use helix_core::line_ending::line_end_char_index;
-use helix_core::{encoding, Rope, Selection};
+use helix_core::movement::Direction;
+use helix_core::{encoding, Range, Rope, RopeSlice, Selection};
 use helix_loader::workspace_trust::TrustQuery;
 use helix_vcs::{visible_changes, ChangeKind, ChangeView, DiffProviderRegistry, FileChange};
 use helix_view::document::from_reader;
+use helix_view::document::Mode;
 use helix_view::editor::Action;
-use helix_view::review::{self, Content, Row, Section};
-use helix_view::{align_view, current, current_ref, doc, Align, Editor};
+use helix_view::review::{self, Content, Row, Section, Stream};
+use helix_view::{align_view, current, current_ref, doc, view, Align, Editor};
 
 use super::{push_jump, Context};
 use crate::compositor;
@@ -183,8 +185,7 @@ fn decode(
 pub(super) fn open(cx: &mut Context) {
     let (view, doc) = current_ref!(cx.editor);
     let Some(stream) = cx.editor.review.stream_of(doc.id()) else {
-        cx.editor
-            .set_error("This buffer isn't a review. Start one with :review");
+        not_a_review(cx.editor);
         return;
     };
     let text = doc.text().slice(..);
@@ -224,4 +225,147 @@ pub(super) fn open(cx: &mut Context) {
     });
     doc.set_selection(view.id, Selection::point(pos));
     align_view(doc, view, Align::Center);
+}
+
+pub(super) fn next_hunk(cx: &mut Context) {
+    step_hunk(cx, Direction::Forward);
+}
+
+pub(super) fn prev_hunk(cx: &mut Context) {
+    step_hunk(cx, Direction::Backward);
+}
+
+fn step_hunk(cx: &mut Context, direction: Direction) {
+    let count = cx.count() - 1;
+    cx.editor.apply_motion(move |editor| {
+        let Some(hunks) = stream_rows(editor, Stream::hunks) else {
+            return;
+        };
+        let mode = editor.mode;
+        let (view, doc) = current!(editor);
+        let text = doc.text().slice(..);
+        let selection = doc.selection(view.id).clone().transform(|range| {
+            let row = range.cursor_line(text);
+            // WHY: the rules of `]g` and `[g` in a file. The next hunk starts
+            // below the cursor's row, and the previous one ends above it.
+            let index = match direction {
+                Direction::Forward => hunks
+                    .iter()
+                    .position(|hunk| hunk.start > row)
+                    .map(|index| (index + count).min(hunks.len() - 1)),
+                Direction::Backward => hunks
+                    .iter()
+                    .rposition(|hunk| hunk.end <= row)
+                    .map(|index| index.saturating_sub(count)),
+            };
+            let Some(hunk) = index.map(|index| &hunks[index]) else {
+                return range;
+            };
+            select_rows(text, range, hunk, mode, direction)
+        });
+        push_jump(view, doc);
+        doc.set_selection(view.id, selection);
+    });
+}
+
+pub(super) fn first_hunk(cx: &mut Context) {
+    edge_hunk(cx, Direction::Backward);
+}
+
+pub(super) fn last_hunk(cx: &mut Context) {
+    edge_hunk(cx, Direction::Forward);
+}
+
+fn edge_hunk(cx: &mut Context, end: Direction) {
+    let Some(hunks) = stream_rows(cx.editor, Stream::hunks) else {
+        return;
+    };
+    let hunk = match end {
+        Direction::Forward => hunks.last(),
+        Direction::Backward => hunks.first(),
+    };
+    let Some(hunk) = hunk else {
+        return;
+    };
+    let mode = cx.editor.mode;
+    let (view, doc) = current!(cx.editor);
+    let text = doc.text().slice(..);
+    let range = select_rows(
+        text,
+        doc.selection(view.id).primary(),
+        hunk,
+        mode,
+        Direction::Forward,
+    );
+    push_jump(view, doc);
+    doc.set_selection(view.id, Selection::single(range.anchor, range.head));
+}
+
+fn select_rows(
+    text: RopeSlice,
+    range: Range,
+    rows: &std::ops::Range<usize>,
+    mode: Mode,
+    direction: Direction,
+) -> Range {
+    let rows = Range::new(text.line_to_char(rows.start), text.line_to_char(rows.end));
+    if mode != Mode::Select {
+        return rows.with_direction(direction);
+    }
+    let head = if rows.head < range.anchor {
+        rows.anchor
+    } else {
+        rows.head
+    };
+    Range::new(range.anchor, head)
+}
+
+pub(super) fn next_file(cx: &mut Context) {
+    step_file(cx, Direction::Forward);
+}
+
+pub(super) fn prev_file(cx: &mut Context) {
+    step_file(cx, Direction::Backward);
+}
+
+fn step_file(cx: &mut Context, direction: Direction) {
+    let count = cx.count() - 1;
+    cx.editor.apply_motion(move |editor| {
+        let Some(headers) = stream_rows(editor, |stream| stream.headers().collect::<Vec<_>>())
+        else {
+            return;
+        };
+        let extend = editor.mode == Mode::Select;
+        let (view, doc) = current!(editor);
+        let text = doc.text().slice(..);
+        let selection = doc.selection(view.id).clone().transform(|range| {
+            let row = range.cursor_line(text);
+            let beyond: Vec<_> = match direction {
+                Direction::Forward => headers.iter().filter(|&&header| header > row).collect(),
+                Direction::Backward => headers
+                    .iter()
+                    .rev()
+                    .filter(|&&header| header < row)
+                    .collect(),
+            };
+            let Some(&header) = beyond.get(count).or(beyond.last()).copied() else {
+                return range;
+            };
+            range.put_cursor(text, text.line_to_char(header), extend)
+        });
+        push_jump(view, doc);
+        doc.set_selection(view.id, selection);
+    });
+}
+
+fn stream_rows<T>(editor: &mut Editor, rows: impl Fn(&Stream) -> T) -> Option<T> {
+    let rows = editor.review.stream_of(view!(editor).doc).map(rows);
+    if rows.is_none() {
+        not_a_review(editor);
+    }
+    rows
+}
+
+fn not_a_review(editor: &mut Editor) {
+    editor.set_error("This buffer isn't a review. Start one with :review");
 }

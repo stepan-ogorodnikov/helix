@@ -111,6 +111,12 @@
 | `lsp_or_syntax_symbol_picker` | Open symbol picker from LSP or syntax information | normal: `` <space>s ``, select: `` <space>s `` |
 | `changed_file_picker` | Open changed file picker | normal: `` <space>g ``, select: `` <space>g `` |
 | `review_open` | Open the file of the review row under the cursor, or show the lines of a gap |  |
+| `review_next_hunk` | Select the next hunk of the review |  |
+| `review_prev_hunk` | Select the previous hunk of the review |  |
+| `review_first_hunk` | Select the first hunk of the review |  |
+| `review_last_hunk` | Select the last hunk of the review |  |
+| `review_next_file` | Go to the next file of the review |  |
+| `review_prev_file` | Go to the previous file of the review |  |
 | `select_references_to_symbol_under_cursor` | Select symbol references | normal: `` <space>h ``, select: `` <space>h `` |
 | `workspace_symbol_picker` | Open workspace symbol picker |  |
 | `syntax_workspace_symbol_picker` | Open workspace symbol picker from syntax information |  |

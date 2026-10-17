@@ -487,3 +487,84 @@ async fn review_refresh_reads_the_changes_again_and_keeps_the_place() -> anyhow:
     )
     .await
 }
+
+/// Two hunks in `a.txt`, one in `b.txt`. Hunks are rows 2–3, 10–11, and 14–15,
+/// headers rows 0 and 13.
+fn three_hunks() -> TempDir {
+    repo(
+        &[("a.txt", TEN), ("b.txt", "b\n")],
+        &[
+            ("a.txt", Some("1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n")),
+            ("b.txt", Some("B\n")),
+        ],
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hunk_and_file_motions_cross_files() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("]g"),
+                Some(&|app| assert_eq!(selected(app), "2\ntwo\n")),
+            ),
+            (
+                Some("]g"),
+                Some(&|app| assert_eq!(selected(app), "9\nnine\n")),
+            ),
+            (
+                Some("[g"),
+                Some(&|app| assert_eq!(selected(app), "2\ntwo\n", "the hunk above the cursor")),
+            ),
+            (
+                Some("2]g"),
+                Some(&|app| assert_eq!(selected(app), "b\nB\n", "into the next file")),
+            ),
+            (
+                Some("[G"),
+                Some(&|app| assert_eq!(selected(app), "2\ntwo\n")),
+            ),
+            (Some("]G"), Some(&|app| assert_eq!(selected(app), "b\nB\n"))),
+            (Some("gg]F"), Some(&|app| assert_eq!(cursor(app), (13, 0)))),
+            (
+                Some("j[F"),
+                Some(&|app| assert_eq!(cursor(app), (13, 0), "a row's previous header is its own")),
+            ),
+            (Some("[F"), Some(&|app| assert_eq!(cursor(app), (0, 0)))),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_custom_key_for_goto_next_change_moves_by_review_hunk() -> anyhow::Result<()> {
+    use helix_core::hashmap;
+    use helix_term::keymap;
+
+    let repo = three_hunks();
+    let mut config = test_config();
+    config.keys = hashmap! {
+        Mode::Normal => keymap!({ "Normal mode"
+            "C-n" => goto_next_change,
+        }),
+    };
+    let mut app = AppBuilder::new()
+        .with_config(config)
+        .with_file(repo.path().join("a.txt"), None)
+        .build()?;
+    start_review(&mut app).await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("<C-n><C-n>"),
+        Some(&|app| assert_eq!(selected(app), "9\nnine\n")),
+        false,
+    )
+    .await
+}

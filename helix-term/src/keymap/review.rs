@@ -9,7 +9,7 @@ use helix_core::hashmap;
 use helix_view::{document::Mode, view, Editor};
 
 use super::macros::keymap;
-use super::{merge_keys, KeyTrie, Keymaps};
+use super::{merge_keys, KeyTrie, Keymaps, MappableCommand};
 
 #[derive(Default)]
 pub struct ReviewKeys {
@@ -23,6 +23,9 @@ impl ReviewKeys {
         match (in_stream, self.user.take()) {
             (true, None) => {
                 let mut map = keymaps.map().clone();
+                for keys in map.values_mut() {
+                    replace_commands(keys);
+                }
                 merge_keys(&mut map, bindings());
                 let stream = Keymaps::new(Box::new(Constant(map)));
                 self.user = Some(std::mem::replace(keymaps, stream));
@@ -33,9 +36,44 @@ impl ReviewKeys {
     }
 }
 
+fn replace_commands(keys: &mut KeyTrie) {
+    let review = |command: &MappableCommand| match command.name() {
+        "goto_next_change" => Some(MappableCommand::review_next_hunk),
+        "goto_prev_change" => Some(MappableCommand::review_prev_hunk),
+        "goto_first_change" => Some(MappableCommand::review_first_hunk),
+        "goto_last_change" => Some(MappableCommand::review_last_hunk),
+        _ => None,
+    };
+    match keys {
+        KeyTrie::MappableCommand(command) => {
+            if let Some(review) = review(command) {
+                *command = review;
+            }
+        }
+        KeyTrie::Sequence(commands) => {
+            for command in commands {
+                if let Some(review) = review(command) {
+                    *command = review;
+                }
+            }
+        }
+        KeyTrie::Node(node) => {
+            for keys in node.values_mut() {
+                replace_commands(keys);
+            }
+        }
+    }
+}
+
 fn bindings() -> HashMap<Mode, KeyTrie> {
     let keys = keymap!({ "Review"
         "ret" => review_open,
+        "[" => { "Left bracket"
+            "F" => review_prev_file,
+        },
+        "]" => { "Right bracket"
+            "F" => review_next_file,
+        },
     });
     hashmap!(
         Mode::Normal => keys.clone(),

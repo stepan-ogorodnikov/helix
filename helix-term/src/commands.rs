@@ -416,6 +416,12 @@ impl MappableCommand {
         changed_file_picker, "Open changed file picker",
         // FORK: review-stream
         review_open, "Open the file of the review row under the cursor, or show the lines of a gap",
+        review_next_hunk, "Select the next hunk of the review",
+        review_prev_hunk, "Select the previous hunk of the review",
+        review_first_hunk, "Select the first hunk of the review",
+        review_last_hunk, "Select the last hunk of the review",
+        review_next_file, "Go to the next file of the review",
+        review_prev_file, "Go to the previous file of the review",
         select_references_to_symbol_under_cursor, "Select symbol references",
         workspace_symbol_picker, "Open workspace symbol picker",
         syntax_workspace_symbol_picker, "Open workspace symbol picker from syntax information",
@@ -3490,6 +3496,30 @@ fn changed_file_picker(cx: &mut Context) {
 // FORK: review-stream
 fn review_open(cx: &mut Context) {
     review::open(cx);
+}
+
+fn review_next_hunk(cx: &mut Context) {
+    review::next_hunk(cx);
+}
+
+fn review_prev_hunk(cx: &mut Context) {
+    review::prev_hunk(cx);
+}
+
+fn review_first_hunk(cx: &mut Context) {
+    review::first_hunk(cx);
+}
+
+fn review_last_hunk(cx: &mut Context) {
+    review::last_hunk(cx);
+}
+
+fn review_next_file(cx: &mut Context) {
+    review::next_file(cx);
+}
+
+fn review_prev_file(cx: &mut Context) {
+    review::prev_file(cx);
 }
 
 pub fn command_palette(cx: &mut Context) {
