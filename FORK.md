@@ -98,10 +98,10 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing within a line, phase 7a, is done. Phases 7b–9 are planned.
+- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing lines, phases 7a–7b, is done. Phases 7c–9 are planned.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
-  An edit within an added or unchanged line goes to the file's buffer as you type, loaded in the background if need be, and the rows follow it. Any other edit is put back, and a staged review takes none.
+  An edit to added or unchanged lines, new and deleted lines too, goes to the file's buffer as you type, loaded in the background if need be, and the rows follow it. Any other edit is put back, and a staged review takes none.
   `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.

@@ -471,9 +471,10 @@ you to selectively add search terms to your selections.
 Each file starts with a row naming it and how it changed. Its hunks follow with 3 lines of context, and a row counts the unchanged lines left out between them.
 The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
 
-An edit to an added or unchanged line goes to the file's buffer as you type, and the rows follow it: an edited line gets its old version above it.
+An edit to added or unchanged lines goes to the file's buffer as you type, new and deleted lines too, and the rows follow it: an edited line gets its old version above it.
 A file that isn't open gets a buffer in the background. Nothing is saved until you write it, with `:wa` for example, and `u` in the file undoes the edit.
-An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is an edit that adds or removes a line. A staged review takes no edits.
+A new line takes the file's line ending. An edit to a file's last line gives it a line ending if it had none.
+An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is one that would join a line to such a row. A staged review takes no edits.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
 With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review swaps these commands for its own, on whatever keys they're bound to:

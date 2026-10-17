@@ -9,7 +9,7 @@ use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
 use helix_vcs::ChangeView;
 
-use super::{apply_to_file, forward, update, Content, Row, Stream};
+use super::{apply_to_file, forward, layout, update, Content, Row, Stream};
 use crate::document::{from_reader, Mode};
 use crate::editor::Action;
 use crate::tree::Tree;
@@ -52,7 +52,33 @@ pub fn sync(editor: &mut Editor, completing: bool) {
         editor.set_status(message);
     }
     save_selections(editor, doc_id);
+    fit_line_ending(editor, doc_id);
     fit_gutters(editor);
+}
+
+// WHY: `o` and `Enter` insert the buffer's line ending, so a new line gets
+// the line ending of the file it goes to.
+fn fit_line_ending(editor: &mut Editor, doc_id: DocumentId) {
+    let view = editor.tree.get(editor.tree.focus);
+    let (Some(stream), Some(doc)) = (editor.review.stream.as_ref(), editor.documents.get(&doc_id))
+    else {
+        return;
+    };
+    if view.doc != doc_id {
+        return;
+    }
+    let text = doc.text().slice(..);
+    let row = text.char_to_line(doc.selection(view.id).primary().cursor(text));
+    let Some(ending) = stream
+        .rows
+        .get(row)
+        .map(|row| stream.files[row.file()].ending())
+    else {
+        return;
+    };
+    if let Some(doc) = editor.documents.get_mut(&doc_id) {
+        doc.line_ending = ending;
+    }
 }
 
 /// The focused view if it shows `doc`, or else any view that does.
@@ -102,10 +128,11 @@ fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), Stri
         return None;
     };
     let stream = editor.review.stream.as_ref().expect("checked above");
-    let edits = match forward::edits(stream, edit.changes()) {
-        Ok(edits) => edits,
+    let forward = match forward::forward(stream, edit.changes()) {
+        Ok(forward) => forward,
         Err(refusal) => return refuse(editor, refusal.message()),
     };
+    let edits = forward.edits;
 
     let files: Vec<Edited> = edits
         .iter()
@@ -144,11 +171,15 @@ fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), Stri
 
     let stream = editor.review.stream.as_mut().expect("checked above");
     stream.ranges.map(edit.changes());
+    debug_assert_eq!(forward.text, text);
     stream.text = text;
     stream.version = version;
+    stream.rows = forward.rows;
     for (edit, (id, version, text)) in edits.iter().zip(sources) {
         let file = &mut stream.files[edit.file];
         if let Content::Text { source, .. } = &mut file.content {
+            file.opened =
+                layout::map_ranges(&file.opened, layout::line_map(source, &text).as_deref());
             *source = text;
         }
         // WHY: the relayout compares the file with itself, so it keeps the
@@ -206,22 +237,27 @@ fn buffers(editor: &mut Editor, files: Vec<Edited>) -> Result<Vec<DocumentId>, S
 }
 
 fn rows_match_sources(stream: &Stream) -> bool {
-    stream.rows.iter().enumerate().all(|(row, kind)| {
-        let (Row::Context { file, source, .. } | Row::Added { file, source }) = *kind else {
-            return true;
-        };
-        let Content::Text { source: rope, .. } = &stream.files[file].content else {
-            return false;
-        };
-        let (shown, line) = (stream.text.line(row), rope.line(source));
-        match get_line_ending(&line) {
-            Some(_) => shown == line,
-            // WHY: a last line with no line ending shows one.
-            None => {
-                shown.len_chars() == line.len_chars() + 1 && shown.slice(..line.len_chars()) == line
+    let one_per_line = stream.rows.len() + 1 == stream.text.len_lines();
+    one_per_line
+        && stream.rows.iter().enumerate().all(|(row, kind)| {
+            let (Row::Context { file, source, .. } | Row::Added { file, source }) = *kind else {
+                return true;
+            };
+            let Content::Text { source: rope, .. } = &stream.files[file].content else {
+                return false;
+            };
+            if source >= layout::line_count(rope) {
+                return false;
             }
-        }
-    })
+            let (shown, line) = (stream.text.line(row), rope.line(source));
+            match get_line_ending(&line) {
+                Some(_) => shown == line,
+                // WHY: a last line with no line ending shows one.
+                None => get_line_ending(&shown).is_some_and(|ending| {
+                    shown.slice(..shown.len_chars() - ending.len_chars()) == line
+                }),
+            }
+        })
 }
 
 fn relayout(editor: &mut Editor) -> bool {

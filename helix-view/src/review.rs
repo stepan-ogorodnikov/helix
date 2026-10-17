@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use helix_core::encoding::Encoding;
-use helix_core::{line_ending::get_line_ending, Rope, RopeSlice, Selection};
+use helix_core::line_ending::{auto_detect_line_ending, get_line_ending, LineEnding};
 use helix_core::{Assoc, ChangeSet, Language, Transaction};
+use helix_core::{Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange, Hunk};
 
 use crate::editor::Action;
@@ -242,6 +243,19 @@ struct File {
     hunks: OnceLock<Option<Vec<Hunk>>>,
 }
 
+impl File {
+    // WHY: headers, gaps, and a last line with no line ending show the file's
+    // own line ending, so `O` below them inserts the same one as the stream.
+    fn ending(&self) -> LineEnding {
+        let Content::Text { base, source } = &self.content else {
+            return LineEnding::LF;
+        };
+        auto_detect_line_ending(source)
+            .or_else(|| auto_detect_line_ending(base))
+            .unwrap_or(LineEnding::LF)
+    }
+}
+
 impl From<Section> for File {
     fn from(section: Section) -> File {
         File {
@@ -404,23 +418,24 @@ fn layout(files: &[File], context: usize) -> Layout {
             }
         };
 
+        let ending = file.ending().as_str();
         text.push_str(&header(&file.change, note));
-        text.push('\n');
+        text.push_str(ending);
         rows.push(Row::Header { file: index });
         for row in &body {
             match (*row, &file.content) {
                 (Row::Gap { start, end, .. }, _) => {
                     let lines = end - start;
                     let plural = if lines == 1 { "" } else { "s" };
-                    text.push_str(&format!("⋯ {lines} unchanged line{plural}\n"));
+                    text.push_str(&format!("⋯ {lines} unchanged line{plural}{ending}"));
                 }
                 (Row::Removed { base, .. }, Content::Text { base: rope, .. }) => {
-                    push_line(&mut text, rope.line(base))
+                    push_line(&mut text, rope.line(base), ending)
                 }
                 (
                     Row::Context { source, .. } | Row::Added { source, .. },
                     Content::Text { source: rope, .. },
-                ) => push_line(&mut text, rope.line(source)),
+                ) => push_line(&mut text, rope.line(source), ending),
                 _ => unreachable!("only a text file has rows below its header"),
             }
         }
@@ -435,12 +450,12 @@ fn layout(files: &[File], context: usize) -> Layout {
     Layout { rows, text, widths }
 }
 
-fn push_line(text: &mut String, line: RopeSlice) {
+fn push_line(text: &mut String, line: RopeSlice, ending: &str) {
     // INVARIANT: a row keeps its line's own line ending, so the row's chars
     // match the line's one to one. `ret` carries the column over on that.
     text.extend(line.chunks());
     if get_line_ending(&line).is_none() {
-        text.push('\n');
+        text.push_str(ending);
     }
 }
 
@@ -742,8 +757,8 @@ mod tests {
             "a.txt  modified\n\
              ⋯ 2 unchanged lines\n\
              3\n4\n5\n6\nsix\n7\n8\n9\n\
-             b.txt  modified\n\
-             x\r\ny\nz\n\
+             b.txt  modified\r\n\
+             x\r\ny\r\nz\r\n\
              c.bin  new file, binary\n"
         );
         assert_eq!(layout.rows.len(), Rope::from(layout.text).len_lines() - 1);
@@ -829,7 +844,7 @@ mod tests {
                 .map(|range| text.slice(range.clone()).to_string())
                 .collect()
         };
-        assert_eq!(text, "a.txt  modified\nx = 1\r\nx = 2\r\nkeep\n");
+        assert_eq!(text, "a.txt  modified\r\nx = 1\r\nx = 2\r\nkeep\n");
         assert_eq!(texts(&ranges.headers), ["a.txt  modified"]);
         assert_eq!(texts(&ranges.removed), ["x = 1"]);
         assert!(ranges.gaps.is_empty());

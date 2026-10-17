@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 7a done 2026-10-18. The read-only review, phases 1–6, is complete, and edits within a line reach the files. Phases 7b–7d are next.
+Status: phase 7b done 2026-10-18. The read-only review, phases 1–6, is complete, and edits to lines reach the files, new and deleted lines too. Phases 7c–7d are next.
 
 ## Bottom line
 
@@ -214,7 +214,7 @@ No `PostCommand` or `PostInsertChar` hook is needed.
    - An insert at a run's start or end belongs to the run.
    - `O` on a run's first row inserts a line ending and indent at the end of the row above it, which isn't editable.
      An insert there that starts with that row's line ending is read as the same line inserted at the run's start.
-   - A file's last line with no line ending shows one in the stream (6.2). It stands for the end of the file. An insert after it puts the file's line ending in first.
+   - A file's last line with no line ending shows one in the stream (6.2). It stands for the end of the file. An edit that reaches that line makes it real, unless the edit deletes it (6.13).
 
    If any change breaks a rule, the whole window reverts, as in phase 1, and a status message says why.
 2. **Forward.** Shift each change by its run's offset into the file, and apply one transaction per file with the stream's view id.
@@ -347,7 +347,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 6d. Picker key | Done | A changed-files picker key that jumps into the review at the file's header | 50–100. Actual: about 80, plus 20 of tests. | Low |
 | **Editing, if it works out** | | | **0.9–1.5k** | |
 | 7a. In-line edits | Done | An edit inside a line of an added or context row reaches the file's buffer, loaded if need be, and the rows relayout live. Capture, the `handle_event` sync, the check, forwarding, commits, the hold under a completion menu. Edits that add or remove a line are refused. | 300–450. Actual: about 360, plus 340 of tests. | **High**: the engine |
-| 7b. Line edits | Planned | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400 | Medium: the rules at run edges |
+| 7b. Line edits | Done | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400. Actual: about 240, plus 180 of tests. | Medium: the rules at run edges |
 | 7c. Indent | Planned | The stream takes the indent style of the file under the cursor | 20–50 | Low |
 | 7d. Cleanup | Planned | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60 | Low |
 | 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
@@ -529,6 +529,18 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
   - The rest is whole-stream work: reconcile, the ranges and their changed words, and the line maps. Limiting it to the edited file's rows is the next step, if that's slow in use.
 - `update` kept a passed-in file's parse when that side's text changed. `follow_sources` passes clones, so a buffer that closed was highlighted with its old parse until something else changed. A changed side now starts over, for parses and hunks both.
 - Only a staged review sets `readonly`, so only it shows as read-only in the statusline.
+
+### 6.13 Phase 7b: found
+
+- The join rule is checked on the new text. Each run's span moves through the edit, with an insert at either edge its own, and has to come out empty or ending in a line ending.
+- `O` below a header in a CRLF file inserted `\r\n` where the header ended in `\n`, so the rule at a run's start didn't apply and the edit was refused.
+  Headers, gaps, and a last line's shown line ending now take the file's line ending: the first one in its first 100 lines, or LF.
+- The stream's line ending follows the file under the cursor on every sync, so the statusline shows that file's.
+- The plan's rule for a last line with no line ending was too narrow. `o` on that line leaves an empty last line, which a file can only have with a line ending after it.
+  The row would vanish on the relayout and take the cursor along. Now any edit that reaches the line makes its shown line ending real, unless the edit deletes it. Helix adds a final line ending on write by default anyway.
+- Rows move through the edit by line count. A run whose count changed comes up as added rows until the relayout, keyed by the file's new lines. The gaps below it move by the same count.
+- Opened gaps map through a diff of the file's old and new text. They don't key rows, so a diff's guess is fine there.
+- The debug check now also wants one row per line, and no row for a line the file doesn't have. It caught the empty last line above.
 
 ## 7. Risks
 

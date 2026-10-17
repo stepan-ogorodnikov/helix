@@ -281,13 +281,140 @@ async fn edits_outside_a_files_lines_are_put_back() -> anyhow::Result<()> {
             (Some("ra"), Some(&unchanged)),
             (Some("ggih"), Some(&unchanged)),
             (
-                Some("/three<ret>o"),
+                Some("/^2<ret>J"),
                 Some(&|app| {
                     unchanged(app);
-                    assert_eq!(status(app), "The review can't add or remove lines yet");
+                    assert_eq!(
+                        status(app),
+                        "That would join a line to a removed line, a header, or a gap"
+                    );
                 }),
             ),
         ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lines_added_and_removed_in_the_review_reach_the_file() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    let original = "1\n2\n3\n4\n5\n6\nseven\n8\n9\n10\n";
+    let opened = |app: &Application| {
+        assert_eq!(
+            buffer_text(app, &file).as_deref(),
+            Some("1\n2\n3\n4\n5\nnew\n6\nseven\n8\n9\n10\n")
+        );
+        assert_eq!(
+            stream_text(app),
+            review_of(
+                &file,
+                "⋯ 2 unchanged lines\n3\n4\n5\nnew\n6\n7\nseven\n8\n9\n10\n"
+            )
+        );
+        assert_eq!(cursor(app).0, 5, "the cursor stays on the new line");
+    };
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/^5<ret>onew"),
+                Some(&|app| {
+                    opened(app);
+                    assert_eq!(app.editor.mode, Mode::Insert);
+                }),
+            ),
+            (Some("<esc>"), Some(&opened)),
+            (
+                Some("xd"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some(original));
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(&file, "⋯ 3 unchanged lines\n4\n5\n6\n7\nseven\n8\n9\n10\n")
+                    );
+                }),
+            ),
+            (
+                Some("/seven<ret>Oabove<esc>"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("1\n2\n3\n4\n5\n6\nabove\nseven\n8\n9\n10\n"),
+                        "O below a removed row adds the line above the cursor's"
+                    );
+                    assert_eq!(
+                        stream_text(app),
+                        review_of(
+                            &file,
+                            "⋯ 3 unchanged lines\n4\n5\n6\n7\nabove\nseven\n8\n9\n10\n"
+                        )
+                    );
+                    assert_eq!(cursor(app).0, 6);
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn new_lines_take_the_files_line_ending() -> anyhow::Result<()> {
+    let repo = repo(
+        &[("a.txt", "1\r\n2\r\n3\r\n")],
+        &[("a.txt", Some("1\r\ntwo\r\n3\r\n"))],
+    );
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/two<ret>onew<esc>"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("1\r\ntwo\r\nnew\r\n3\r\n")
+                    );
+                }),
+            ),
+            (
+                Some("ggjOtop<esc>"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("top\r\n1\r\ntwo\r\nnew\r\n3\r\n"),
+                        "O below the file's header"
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_line_after_a_last_line_with_no_line_ending_ends_it() -> anyhow::Result<()> {
+    let repo = repo(&[("a.txt", "a\nb")], &[("a.txt", Some("a\nB"))]);
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("/B<ret>onew<esc>"),
+        Some(&|app| {
+            assert_eq!(buffer_text(app, &file).as_deref(), Some("a\nB\nnew\n"));
+            assert_eq!(stream_text(app), review_of(&file, "a\nb\nB\nnew\n"));
+        }),
         false,
     )
     .await
