@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 6d done 2026-10-17. The read-only review, phases 1–6, is complete. Editing, phases 7–9, waits for the human to try it.
+Status: phase 7 planned 2026-10-18, as 7a–7d (6.11). The read-only review, phases 1–6, is complete, and the human tried it. Phase 7 waits for approval.
 
 ## Bottom line
 
@@ -16,9 +16,9 @@ Status: phase 6d done 2026-10-17. The read-only review, phases 1–6, is complet
 - **Then, if it works out, editing in the stream.** Added and context lines become editable, and an edit lands in the file's own buffer at once.
   It's the last milestone. Dropping its commits leaves a working read-only review.
 - **How:** the stream is an ordinary Helix document. Fork-owned code builds it and keeps it current through upstream's events and public API.
-- **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 3.
+- **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 2.
   None is in `document.rs` or `application.rs`. `ui/editor.rs` takes the most, about 5–7.
-- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 1.1–1.7k. LSP in the stream is unknown until a spike.
+- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP in the stream is unknown until a spike.
 - **Biggest risks:** keeping the cursor still while rows appear and vanish around it (phase 2, which the read-only review already needs).
   Then, for editing, the sync engine, undo across files, and completion.
 
@@ -64,7 +64,7 @@ Three other shapes were weighed.
 - **A multibuffer.** The diff review plan rejected one (its option D) because a view shows one document, and because the prototype put most of its code in hot files.
   This design keeps one document per view. The stream is that document.
   The many-files part lives in fork-owned code that copies text from the file buffers into the stream, and, once editing exists, back.
-  It runs on upstream's public API (`Document::apply`, `history`, `reset_modified`, `indent_style`, `line_ending`, `replace_diagnostics`) and on its events (`DocumentDidChange`, `PostCommand`, `PostInsertChar`, `OnModeSwitch`, `DiagnosticsDidChange`, `DocumentDidClose`).
+  It runs on upstream's public API (`Document::apply`, `history`, `reset_modified`, `indent_style`, `line_ending`, `replace_diagnostics`), and for diagnostics on the `DiagnosticsDidChange` event.
 
 Prior art:
 
@@ -192,50 +192,60 @@ It opens the file's document if it isn't open, so the restore can be undone ther
 
 Everything here builds on phase 2's reconcile. If phase 7's relayout feels wrong in use, its commits are dropped, and the read-only review stays.
 
-**Loading.** The stream opens a file's document with `Action::Load` when an edit reaches its section.
+**Loading.** The stream opens a file's document with `Action::Load` when an edit reaches its section, as `:review-restore` does.
 `Action::Load` gives the document a selection for the current view and no view of its own.
-A file that loads with text different from what the stream showed gets its section rebuilt, and an edit that raced it is refused.
-Closing the stream closes the documents it loaded that are unmodified and shown in no view.
+A file that loads with text different from what the stream showed gets its section rebuilt, and the edit is refused.
+Closing the stream closes the documents it loaded that are unmodified and shown in no view (7d).
 
-**Capture.** A `DocumentDidChange` hook queues `(doc, old_text, changes)` for the stream and its sources, in order.
-The hook only gets `&mut Document`, so it can't touch the other side itself (the note at `document.rs:223`).
+**Capture.** The stream's own history holds exactly its edits since the last sync, because each sync clears it (`settle`).
+The sync commits the pending ones and reads `changes_since(0)`: one exact changeset, undo and redo inside the window included.
+A text diff of the stream's text wouldn't do. It can't tell a deleted context row from an equal removed row next to it.
+So there's no `DocumentDidChange` hook and no queue.
 
-**Sync points**, each with `&mut Editor`:
-
-- `PostCommand` and `PostInsertChar` hooks, after every command and every typed character. Macros sync between their keys.
-- The start of `EditorView::handle_event` and `EditorView::render`. Seams.
-  They catch edits that don't come from a command, without the frame of lag a dispatched callback has: typable commands, bracketed paste, LSP edits, and job callbacks.
+**Sync points**, each with `&mut Editor`: the start of `EditorView::render`, as in phase 1, and the start of `EditorView::handle_event`. Seams.
+Every key goes through `handle_event`, a macro's too, since `replay_macro` feeds its keys to the compositor. So the next key always sees current rows.
+The `render` sync catches what comes without a key: a typable command's edit, LSP edits, job callbacks.
+No `PostCommand` or `PostInsertChar` hook is needed.
 
 **A sync:**
 
-1. **Check the stream's edits.** A change must fall inside one run.
-   An insert at a run's start is allowed. The line break that ends a run can't be deleted, since the stream can't show the join.
-   If any change breaks the rule, the whole window reverts, as in phase 1, and a status message says why.
-2. **Forward.** Shift each change by its run's offset, and apply the result to the source document with the stream's view id.
-3. **Map rows.** Move the row table through the stream's and the sources' changes.
-4. **Reconcile** each touched file, as in phase 2.
-5. **Tidy.**
-   - Commit and clear the stream's own history, and `reset_modified`, so the stream never counts as modified.
-   - Set the stream's `indent_style` and `line_ending` to those of the file under the primary cursor.
+1. **Check the stream's edits.** Each change must fall inside one run.
+   - A run's text must still end with a line ending, or be empty. So the line break that ends a run can't be deleted, and text inserted at a run's end has to end in one. The stream can't show the join.
+   - An insert at a run's start or end belongs to the run.
+   - `O` on a run's first row inserts a line ending and indent at the end of the row above it, which isn't editable.
+     An insert there that starts with that row's line ending is read as the same line inserted at the run's start.
+   - A file's last line with no line ending shows one in the stream (6.2). It stands for the end of the file. An insert after it puts the file's line ending in first.
 
-A sync window normally holds one command's changes.
-If the stream and a source both changed in one window (rare: an LSP edit and a key, with no render between them), the sync replays the queue in order.
-It shifts the source's changes past the stream's. If they overlap, the file's section is rebuilt from the source and the stream edit is refused.
+   If any change breaks a rule, the whole window reverts, as in phase 1, and a status message says why.
+2. **Forward.** Shift each change by its run's offset into the file, and apply one transaction per file with the stream's view id.
+   The file's selection for that view goes to the edit first, so `u` in the file puts the cursor there.
+   A file whose buffer moved since its rows were built refuses the edit, and its rows follow the buffer. That takes an LSP edit and a key with no sync between them.
+3. **Map rows.** The row table moves through the edit: each run becomes the file's new lines in its range, keyed by their new line numbers.
+4. **Reconcile** each touched file, as in phase 2, from the stream's text after the edit.
+5. **Tidy.**
+   - Clear the stream's history, and `reset_modified`, so the stream never counts as modified.
+   - Outside insert mode, commit each touched file's changes to its history. One stream command, or one insert session, is one undo step in the file.
+   - Set the stream's `indent_style` and `line_ending` to those of the file under the primary cursor.
 
 **No echo.** Reconcile compares the rows a file should have with the rows it has.
 A forwarded edit already made them equal, so it causes no second edit.
 
-**Relayout is live, as in Zed** (decision 8.1).
+**Relayout is live, as in Zed** (decided 2026-10-18).
 Edit a context line, and its old version appears above it as a removed row. The line itself turns into an added row.
 The new row is an insert before the cursor's line, so the cursor stays on the text it was on.
 Change an added line back to the base text, and its removed twin vanishes.
+
+**Completion.** Word and path completion work in any buffer, the stream included.
+A completion's preview restores a savepoint first, which reverts every edit since, the stream's relayouts too.
+A reverted removed row would come back as text inserted into a run, and be forwarded into the file.
+So while a completion menu is open in the stream, the sync forwards edits and maps rows, but holds the reconcile until the menu closes.
+The seams pass whether a menu is open, from `EditorView::completion`.
 
 **Undo and redo (phase 8).**
 
 - The stream's own history is never used. Its revisions would mix your edits with relayouts.
 - The stream keeps a log. Each entry is one stream command and lists the `(source document, revision after)` pairs it touched.
-  A stream command is one normal-mode command, or one insert session ending at `Esc`.
-  When it ends, the sync calls `append_changes_to_history` on each touched source.
+  A stream command is one normal-mode command, or one insert session ending at `Esc`. Phase 7 already commits each as one revision of each file it touched.
 - `undo` in the stream pops an entry and undoes each listed source whose current revision matches.
   If a source moved on since, for example you edited it in another split, the undo stops and names the file.
 - `redo` is the same in reverse.
@@ -249,15 +259,18 @@ Change an added line back to the base text, and its removed twin vanishes.
 - `:wa` and the quit checks need nothing. The sources are ordinary documents, and the stream never counts as modified.
   `write_all_impl` skips documents that aren't modified.
 
+**Until phase 8**, `u` in the stream finds an empty history, and `:w` fails, as in phase 1.
+`ret` then `u` undoes in the file, and `:wa` writes every file.
+
 **Until phase 9**, editing in the stream is plain text editing:
 
-- no completion, hover, or goto
+- no LSP completion, hover, or goto. Word and path completion work, as in any buffer.
 - new lines copy the previous line's indent, since the stream has no indent queries
 - no format on type
 
 ### 3.10 LSP (phase 9)
 
-Diagnostics come first, need no seam, and don't need editing. They could move into the read-only milestone.
+Diagnostics come first, need only their hook's registration in `handlers.rs`, and don't need editing. They could move into the read-only milestone.
 A `DiagnosticsDidChange` hook gets `&mut Editor`, maps each source's diagnostics onto its rows, and calls `replace_diagnostics` on the stream.
 Inline diagnostics, `]d`, and the diagnostics gutter then work as in any buffer. Only open files have diagnostics.
 
@@ -288,9 +301,9 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-term/src/ui/editor.rs` | 9 | Keymap field on `EditorView`, swapped in for the stream at the start of `handle_event` | 1 |
 | `helix-term/src/ui/editor.rs` | | `review::sync` at the start of `render` | 1 |
 | `helix-term/src/ui/editor.rs` | | `render_view`: one decoration, overlays, highlighter off for the stream | 4–5 |
-| `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event` | 7 |
+| `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event`, and whether a completion menu is open, passed to both syncs | 7a |
 | `helix-term/src/keymap.rs` | | `pub mod review;` | 1 |
-| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call, if a hook is needed | 7 |
+| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call, for the diagnostics hook | 9 |
 | `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8 |
 | `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6 |
 | `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8 |
@@ -308,9 +321,9 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 - `helix-view/src/review/layout.rs`: base + source + hunks + context → rows. Pure, unit-tested. Phase 1.
 - `helix-view/src/review/reconcile.rs`: current rows vs wanted rows → one stream transaction. Pure, unit-tested. Phase 2.
 - `helix-view/src/review/gutter.rs`: old and new numbers, signs. Phase 1.
-- `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phase 7.
+- `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phases 7a–7b.
 - `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync, loading sources, and the undo log (phases 7–8).
-- `helix-term/src/handlers/review.rs`, from phase 7: `PostCommand`, `PostInsertChar`, `DiagnosticsDidChange`, and `DocumentDidClose` hooks, as editing needs them.
+- `helix-term/src/handlers/review.rs`, phase 9: the `DiagnosticsDidChange` hook.
 - `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and save.
 - `helix-term/src/keymap/review.rs`: the stream keymap overlay.
 - `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
@@ -332,8 +345,11 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 6b. Staging | Done | `:stage-hunk` and `:unstage-hunk` on the hunks under the selection | 200–300, most of it ported. Actual: about 230, of it 130 ported, plus 150 of tests. | Low: ported code |
 | 6c. Restore and context | Done | `:review-restore`, `:review-context` | 150–250. Actual: about 130, plus 110 of tests. | Low |
 | 6d. Picker key | Done | A changed-files picker key that jumps into the review at the file's header | 50–100. Actual: about 80, plus 20 of tests. | Low |
-| **Editing, if it works out** | | | **1.1–1.7k** | |
-| 7. Editing | Planned | Capture, sync points, checks, forwarding, loading sources, line endings, per-file indent | 800–1,200 | **High**: the engine |
+| **Editing, if it works out** | | | **0.9–1.5k** | |
+| 7a. In-line edits | Planned | An edit inside a line of an added or context row reaches the file's buffer, loaded if need be, and the rows relayout live. Capture, the `handle_event` sync, the check, forwarding, commits, the hold under a completion menu. Edits that add or remove a line are refused. | 300–450 | **High**: the engine |
+| 7b. Line edits | Planned | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400 | Medium: the rules at run edges |
+| 7c. Indent | Planned | The stream takes the indent style of the file under the cursor | 20–50 | Low |
+| 7d. Cleanup | Planned | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60 | Low |
 | 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
 | 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
 
@@ -472,24 +488,48 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
   `picker_keys.rs` and `changed_file.rs` belong to other fork features. This feature adds a variant to the first and a hook call to the second.
 - The picker walks the working directory, which the tests can't change, so the key has no end-to-end test. `focus_file` has one.
 
+### 6.11 Phase 7: the split
+
+Planned 2026-10-18, after the human tried the read-only review. Nothing here is built yet.
+
+- Phase 7 split into 7a–7d, one line each:
+  - 7a: Forward edits within a line of the review to the file's buffer.
+  - 7b: Forward edits that add or remove lines in the review.
+  - 7c: Indent the review like the file under the cursor.
+  - 7d: Close the files the review loaded when it closes.
+- 7a carries the engine, so it goes first. Without a line added or removed, the row table keeps its shape, and phase 2's line maps move it as they do now.
+  7b adds the rules at a run's edges and the mapping by new line numbers. A typed new line has to keep its key, or reconcile replaces it and the cursor loses its column (6.3).
+- The line ending goes with 7b, the first phase that inserts one. 7c is the indent only.
+- The edits are read from the stream's own history, not captured by a hook (3.9). The old plan's `DocumentDidChange` queue and its replay went with it, and so did the `handlers.rs` seam until phase 9.
+- A race between the stream and a file's buffer refuses the stream's edit, instead of replaying both in order. It needs an edit with no key or frame between it and the next.
+- Word and path completion are on in any buffer, the stream included. That's why the reconcile is held while a menu is open (3.9).
+- `open` inserts `O`'s line at the end of the line above (`commands.rs`, `fn open`). That's why the rule at a run's start exists.
+- Each relayout diffs every file and finds the changed words of every hunk again. 7a measures a keystroke in a large review, and keeps each untouched file's hunks if it's slow.
+- `:review-restore` commits with the stream view's selection in the file. `Action::Load` puts that at the file's start, so `u` in the file likely moves the cursor there.
+  7a checks it, and fixes it with the helper that sets the selection at the edit.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
 | --- | --- | --- |
 | Cursor jumps when rows appear or vanish | Reconcile, phase 2 | Match rows by identity. Unit tests on layout transitions: context → modified, modified → context, hunks merging and splitting. |
 | An edit slips past the read-only guard | Guard, phase 1 | The check runs before every frame and compares the buffer's version, so any edit is put back before it's drawn. |
-| Stream and source drift apart | Sync, phase 7 | One queue in event order. The fork's own edits are flagged. Debug builds assert after each sync that every editable row equals its source line. |
+| Stream and source drift apart | Sync, phase 7 | One exact changeset per sync, from the stream's history. A file that moved under an edit refuses it. Debug builds assert after each sync that every editable row equals its source line. |
+| A completion reverts a relayout into the file | Completion in the stream, phase 7a | Hold the reconcile while a completion menu is open. A test selects a word completion on an edited line, and the file gets the word once. |
 | Undo surprises | Stream log, phase 8 | Undo only when the source's revision matches. Otherwise stop and name the file. |
-| An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete but still leaves you in insert mode. |
-| Slow big reviews | Refresh, reconcile | Re-diff only stale files. Size caps per file. Load sources only when edited. |
+| An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete, and leaves insert mode, as phase 1 does. |
+| Slow big reviews | Refresh, reconcile | Re-diff only stale files. Size caps per file. Load sources only when edited. Each keystroke relays out the stream, so 7a measures one. |
 | Upstream churn | `ui/editor.rs` (9/yr), `commands.rs` (39/yr) | Seams stay one line. Bodies live in fork files. |
 | LSP needs core changes | Phase 9 | Spike first. Diagnostics need none. Without the rest, the stream still works for editing. |
 
 ## 8. Open decisions
 
-1. **Relayout timing**, for editing. Live as you type, like Zed (recommended), or deferred until `Esc`, with rows fixed while in insert mode.
-2. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
-3. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+1. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
+2. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+
+Decided, 2026-10-18:
+
+- **Relayout is live**, as you type, like Zed. Not deferred until `Esc`.
 
 Decided, 2026-10-17:
 
