@@ -6,7 +6,6 @@ use anyhow::{bail, Context as _};
 use helix_core::command_line::Args;
 use helix_core::Transaction;
 use helix_vcs::ChangeView;
-use helix_view::editor::Action;
 use helix_view::review::{self, layout};
 use helix_view::{current_ref, Editor};
 
@@ -71,7 +70,7 @@ fn restore(
 ) -> anyhow::Result<usize> {
     let doc_id = match editor.document_by_path(path) {
         Some(doc) => doc.id(),
-        None => editor.open(path, Action::Load)?,
+        None => review::load(editor, path)?,
     };
     let focus = editor.tree.focus;
     let doc = editor.documents.get_mut(&doc_id).expect("just found");

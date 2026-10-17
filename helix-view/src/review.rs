@@ -30,7 +30,7 @@ mod sync;
 mod syntax;
 mod words;
 
-pub use sync::sync;
+pub use sync::{load, sync};
 pub use syntax::overlays as syntax_overlays;
 
 /// What a line of the stream shows.
@@ -150,6 +150,8 @@ pub struct Stream {
     /// Files' buffers with forwarded changes not yet in their history, and the
     /// view each was made from.
     pending: Vec<(DocumentId, ViewId)>,
+    /// Files' buffers the review opened in the background.
+    loaded: Vec<DocumentId>,
     /// Whether an edit was forwarded since the rows were laid out.
     relayout: bool,
 }
@@ -543,6 +545,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         ranges: Ranges::default(),
         indent: doc.indent_style,
         pending: Vec::new(),
+        loaded: Vec::new(),
         relayout: false,
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
@@ -836,6 +839,7 @@ mod tests {
             ranges: Ranges::default(),
             indent: IndentStyle::Tabs,
             pending: Vec::new(),
+            loaded: Vec::new(),
             relayout: false,
         }
     }

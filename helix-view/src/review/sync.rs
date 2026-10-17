@@ -10,7 +10,7 @@ use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 use helix_vcs::ChangeView;
 
 use super::{apply_to_file, forward, layout, update, Content, Row, Stream};
-use crate::document::{from_reader, Mode};
+use crate::document::{from_reader, DocumentOpenError, Mode};
 use crate::editor::Action;
 use crate::tree::Tree;
 use crate::{Document, DocumentId, Editor, ViewId};
@@ -22,7 +22,8 @@ pub fn sync(editor: &mut Editor, completing: bool) {
         return;
     };
     if !editor.documents.contains_key(&doc_id) {
-        editor.review.stream = None;
+        let loaded = editor.review.stream.take().map(|stream| stream.loaded);
+        close_loaded(editor, loaded.unwrap_or_default());
         fit_gutters(editor);
         return;
     }
@@ -85,6 +86,31 @@ fn fit_file_style(editor: &mut Editor, doc_id: DocumentId) {
         doc.line_ending = ending;
         doc.indent_style = indent;
     }
+}
+
+// WHY: the review opened these in the background. With it gone nothing shows
+// them, and one that holds nothing unsaved has no reason to stay open.
+fn close_loaded(editor: &mut Editor, loaded: Vec<DocumentId>) {
+    for doc in loaded {
+        let unsaved = editor
+            .documents
+            .get(&doc)
+            .is_none_or(|doc| doc.is_modified());
+        let shown = editor.tree.views().any(|(view, _)| view.doc == doc);
+        if !unsaved && !shown {
+            let _ = editor.close_document(doc, false);
+        }
+    }
+}
+
+/// Opens `path`'s buffer in the background, to close it again with the review.
+pub fn load(editor: &mut Editor, path: &Path) -> Result<DocumentId, DocumentOpenError> {
+    let open = editor.document_by_path(path).map(|doc| doc.id());
+    let doc = editor.open(path, Action::Load)?;
+    if let (None, Some(stream)) = (open, editor.review.stream.as_mut()) {
+        stream.loaded.push(doc);
+    }
+    Ok(doc)
 }
 
 /// The focused view if it shows `doc`, or else any view that does.
@@ -227,7 +253,7 @@ fn buffers(editor: &mut Editor, files: Vec<Edited>) -> Result<Vec<DocumentId>, S
                     shown.display()
                 ))
             }
-            None => match editor.open(&path, Action::Load) {
+            None => match load(editor, &path) {
                 Ok(doc) if *editor.documents[&doc].text() == source => doc,
                 Ok(_) => {
                     return Err(format!(

@@ -438,7 +438,7 @@ async fn a_new_line_after_a_last_line_with_no_line_ending_ends_it() -> anyhow::R
 
     test_key_sequence(
         &mut app,
-        Some("/B<ret>onew<esc>"),
+        Some("/^B<ret>onew<esc>"),
         Some(&|app| {
             assert_eq!(buffer_text(app, &file).as_deref(), Some("a\nB\nnew\n"));
             assert_eq!(stream_text(app), review_of(&file, "a\nb\nB\nnew\n"));
@@ -539,6 +539,49 @@ async fn an_edit_loads_a_file_that_isnt_open() -> anyhow::Result<()> {
             assert_eq!(std::fs::read_to_string(&b).unwrap(), "B\n");
             assert!(stream_text(app).ends_with("b.txt  modified\nb\nXB\n"));
         }),
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn closing_the_review_closes_the_saved_files_it_opened() -> anyhow::Result<()> {
+    let repo = repo(
+        &[("a.txt", "a\n"), ("b.txt", "b\n"), ("c.txt", "c\n")],
+        &[
+            ("a.txt", Some("A\n")),
+            ("b.txt", Some("B\n")),
+            ("c.txt", Some("C\n")),
+        ],
+    );
+    let path = |name| repo.path().join(name);
+    let mut app = app_on(path("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (Some("/^B<ret>ix<esc>:wa<ret>"), None),
+            (
+                Some("/^C<ret>ix<esc>:buffer-close<ret>"),
+                Some(&|app| {
+                    assert!(app.editor.review.stream().is_none());
+                    assert!(
+                        app.editor.document_by_path(path("b.txt")).is_none(),
+                        "saved, so it closes"
+                    );
+                    assert_eq!(
+                        buffer_text(app, &path("c.txt")).as_deref(),
+                        Some("xC\n"),
+                        "unsaved, so it stays"
+                    );
+                    assert!(
+                        app.editor.document_by_path(path("a.txt")).is_some(),
+                        "the review didn't open it"
+                    );
+                }),
+            ),
+        ],
         false,
     )
     .await
@@ -703,7 +746,7 @@ async fn an_edit_in_the_file_shows_when_you_come_back() -> anyhow::Result<()> {
                 }),
             ),
             (
-                Some("/xseven<ret><ret>xc7<esc>/x5<ret>xc5<esc>:review<ret>"),
+                Some("/xseven<ret><ret>xc7<esc>/^x5<ret>xc5<esc>:review<ret>"),
                 Some(&|app| {
                     assert_eq!(
                         stream_text(app),

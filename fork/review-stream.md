@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 7c done 2026-10-18. The read-only review, phases 1–6, is complete, and edits to lines reach the files, new and deleted lines too, in each file's line ending and indent. Phase 7d is next.
+Status: phase 7 done 2026-10-18. The read-only review, phases 1–6, is complete, and so is editing in it, phase 7. Undo and save, phase 8, wait for the human to try the editing.
 
 ## Bottom line
 
@@ -349,7 +349,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 7a. In-line edits | Done | An edit inside a line of an added or context row reaches the file's buffer, loaded if need be, and the rows relayout live. Capture, the `handle_event` sync, the check, forwarding, commits, the hold under a completion menu. Edits that add or remove a line are refused. | 300–450. Actual: about 360, plus 340 of tests. | **High**: the engine |
 | 7b. Line edits | Done | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400. Actual: about 240, plus 180 of tests. | Medium: the rules at run edges |
 | 7c. Indent | Done | The stream takes the indent style of the file under the cursor | 20–50. Actual: about 45, plus 30 of tests. | Low |
-| 7d. Cleanup | Planned | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60 | Low |
+| 7d. Cleanup | Done | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60. Actual: about 35, plus 45 of tests. | Low |
 | 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
 | 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
 
@@ -549,6 +549,13 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
 - Detection reads up to 1,000 lines, too much for every frame. Each file keeps what it found until its text changes, as with its hunks.
 - A file that isn't open goes without its editorconfig until an edit opens it, so only the first key in it can miss.
 - The line ending stays the one the text shows, even with the buffer open, so it agrees with the headers' (6.13).
+
+### 6.15 Phase 7d: found
+
+- The sync already notices when the stream's buffer is gone, so closing the files there needs no `DocumentDidClose` hook. They close at the next sync.
+- `:review-restore` opens files in the background too. It now goes through the same `review::load`, so its files close with the review as well.
+- A file shown in a view since, by `ret` for example, stays open, and so does one with unsaved changes, as any buffer would.
+- A one-letter search in the tests could match the random temp directory in a header row, about one run in ten for `/B`. The test anchors it, and an older `/x5` too.
 
 ## 7. Risks
 
