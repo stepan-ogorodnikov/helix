@@ -98,7 +98,7 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Phases 8–9 are planned.
+- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and save are planned as 8a–8b, then LSP as phase 9.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit to added or unchanged lines, new and deleted lines too, goes to the file's buffer as you type, loaded in the background if need be and closed with the review once saved, and the rows follow it. New lines and indents are the file's own. Any other edit is put back, and a staged review takes none.

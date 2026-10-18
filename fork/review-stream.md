@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 7 done 2026-10-18. The read-only review, phases 1–6, is complete, and so is editing in it, phase 7. Undo and save, phase 8, wait for the human to try the editing.
+Status: phase 8 planned 2026-10-18, as 8a–8b (6.16). The read-only review, phases 1–6, and editing in it, phase 7, are complete, and the human tried the editing. Phase 8 waits for approval.
 
 ## Bottom line
 
@@ -16,7 +16,7 @@ Status: phase 7 done 2026-10-18. The read-only review, phases 1–6, is complete
 - **Then, if it works out, editing in the stream.** Added and context lines become editable, and an edit lands in the file's own buffer at once.
   It's the last milestone. Dropping its commits leaves a working read-only review.
 - **How:** the stream is an ordinary Helix document. Fork-owned code builds it and keeps it current through upstream's events and public API.
-- **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 2.
+- **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 3.
   None is in `document.rs` or `application.rs`. `ui/editor.rs` takes the most, about 5–7.
 - **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP in the stream is unknown until a spike.
 - **Biggest risks:** keeping the cursor still while rows appear and vanish around it (phase 2, which the read-only review already needs).
@@ -162,13 +162,13 @@ Draft:
 | `]g` `[g` | next / previous hunk, across files | next / previous change | 3 |
 | `]G` `[G` | last / first hunk | last / first change | 3 |
 | `]F` `[F` | next / previous file | unbound | 3 |
-| `u` `U` `A-u` `A-U` | the stream log (3.9) | the document history | 8 |
+| `u` `U` `A-u` `A-U` | the stream log (3.9) | the document history | 8a |
 
 `ret` records a jump first, so `C-o` returns to the stream. `commands/review.rs` is a child of `commands`, so it can call the private `push_jump`.
 
 Typable: `:review [all|unstaged|staged]`, `:review-refresh`, `:review-context <n>`, `:stage-hunk`, `:unstage-hunk`, `:review-restore`.
 `:review-restore` writes the base text over the hunks under the selection into the source, like `:reset-diff-change`, and the refresh removes them from the stream.
-It opens the file's document if it isn't open, so the restore can be undone there.
+It opens the file's document if it isn't open, so the restore can be undone there, and from 8a by `u` in the stream.
 
 ### 3.7 Scopes and file kinds
 
@@ -241,26 +241,47 @@ A reverted removed row would come back as text inserted into a run, and be forwa
 So while a completion menu is open in the stream, the sync forwards edits and maps rows, but holds the reconcile until the menu closes.
 The seams pass whether a menu is open, from `EditorView::completion`.
 
-**Undo and redo (phase 8).**
+**Undo and redo (phase 8a).**
 
 - The stream's own history is never used. Its revisions would mix your edits with relayouts.
-- The stream keeps a log. Each entry is one stream command and lists the `(source document, revision after)` pairs it touched.
+- The stream keeps a log of steps. A step is one stream command, and lists each file buffer it changed, with its revisions before and after.
   A stream command is one normal-mode command, or one insert session ending at `Esc`. Phase 7 already commits each as one revision of each file it touched.
-- `undo` in the stream pops an entry and undoes each listed source whose current revision matches.
-  If a source moved on since, for example you edited it in another split, the undo stops and names the file.
-- `redo` is the same in reverse.
-- The stream's keymap swaps `undo`, `redo`, `earlier`, and `later` for stream versions, on whatever keys you bound them to.
-  Typed `:earlier`/`:later` in the stream find an empty history and do nothing.
+  A `:review-restore` is a step too, and so are a `:w`'s own edits (8b).
+- `u` in the stream pops a step and undoes it in each of its files, through the stream's view.
+  If any file moved on since, for example you edited it in another split, nothing is undone, and the status line names the file. `ret` then `u` undoes it there. A closed file stops it the same way.
+- `U` is the same in reverse. A file whose redo would take a newer branch of its history, one made in its own split after the undo, stops it too.
+- A count undoes that many steps, and stops at the first that can't go. A new step drops the steps there were to redo.
+- Afterwards the rows follow the files at once. The stream gets a cursor at each file's cursor, which the file's history put back where the step began.
+  The cursor goes on that line's row, or on the file's header when the line isn't shown. The primary is the first file's in the stream.
+- The stream's keymap swaps `undo` and `earlier` for `review_undo`, and `redo` and `later` for `review_redo`, on whatever keys you bound them to.
+  The log is a line, so one step earlier is one undo. Typed `:earlier`/`:later` in the stream find an empty history and do nothing.
+- `review_undo` from insert mode, on a key you bound there, ends the session's step first, as upstream's `undo` commits first.
+- A staged review refuses both, as it refuses edits: its rows show the index, not the files.
+- The log lives on the stream, so it stays through `:review-refresh` and a change of scope, and closes with the stream.
+  Each file's own history still has its revisions then.
 
-**Save (phase 8).**
+**Save (phase 8b).**
 
-- `:w` in the stream writes every modified source the stream touched. It's one seam at the top of `write_impl`.
-  It has to come before `write_impl`'s whitespace trims, which would otherwise edit removed rows and be reverted.
+- `:w` in the stream writes every file the stream shows that has unsaved changes, however they were made (decided 2026-10-18).
+- It's one seam at the top of `write_impl`.
+  It has to come before `write_impl`'s whitespace trims, which would otherwise edit removed rows and be put back.
+- The body is `commands/typed/review_write.rs`, a child of `typed`, so it can call the private trims and `make_format_callback`.
+  It runs `write_all_impl`'s chain over those files: trims, final newline, code actions and format on save, then the save.
+  It's a copy, about 60 lines, since `write_all_impl` writes every modified buffer and takes no filter. Its `WHY` names `write_all_impl`, and the ledger lists it, so a rebase that changes the chain updates the copy.
+- `:w!` forces, and `--no-format` and `--no-code-actions` pass through. `:w <path>` in the stream fails, since each file has its own path.
+  With nothing to write, the status line says so.
+- The save's own edits are steps in the log (decided 2026-10-18), so `u` after `:w` undoes them, as `u` in a file undoes a format first.
+  - The trims and final line endings of all the files are one step.
+  - A format lands later, in upstream's callback. The copy wraps the callback, and logs each file's format as a step of its own when it lands.
+  - Code actions on save aren't logged. A file they change stops `u` in the stream, as any edit made elsewhere does.
+- `:wq` and `:wbc` go through `write_impl`, so they write the files too.
+- `:x` and `:update` write only a modified buffer, and the stream never counts as modified, so in the stream they write nothing (decided 2026-10-18).
+  `:x` closes the view. Quitting the last view is still refused while the files have unsaved changes. The book says to use `:w`.
 - `:wa` and the quit checks need nothing. The sources are ordinary documents, and the stream never counts as modified.
   `write_all_impl` skips documents that aren't modified.
 
-**Until phase 8**, `u` in the stream finds an empty history, and `:w` fails, as in phase 1.
-`ret` then `u` undoes in the file, and `:wa` writes every file.
+**Until phase 8a**, `u` in the stream finds an empty history, and `ret` then `u` undoes in the file.
+**Until phase 8b**, `:w` in the stream fails, as in phase 1, and `:wa` writes every file.
 
 **Until phase 9**, editing in the stream is plain text editing:
 
@@ -304,9 +325,9 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event`, and whether a completion menu is open, passed to both syncs | 7a |
 | `helix-term/src/keymap.rs` | | `pub mod review;` | 1 |
 | `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call, for the diagnostics hook | 9 |
-| `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8 |
-| `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6 |
-| `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8 |
+| `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8a |
+| `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6, 8b |
+| `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8b |
 | `helix-vcs/src/git.rs`, `helix-vcs/src/lib.rs` | 3, 1 | `mod index;` lines, as in diff review phase 4 | 6 |
 | `helix-view/Cargo.toml` | 10 | `imara-diff`, unless the diff goes through `helix-vcs` | 1 |
 | `book/src/*` | | Commands, keys, theme scopes | each |
@@ -322,9 +343,11 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 - `helix-view/src/review/reconcile.rs`: current rows vs wanted rows → one stream transaction. Pure, unit-tested. Phase 2.
 - `helix-view/src/review/gutter.rs`: old and new numbers, signs. Phase 1.
 - `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phases 7a–7b.
-- `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync, loading sources, and the undo log (phases 7–8).
+- `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync and loading sources (phase 7).
+- `helix-view/src/review/log.rs`: the undo log, and undo and redo across the files. Phase 8a.
 - `helix-term/src/handlers/review.rs`, phase 9: the `DiagnosticsDidChange` hook.
-- `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and save.
+- `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and redo.
+- `helix-term/src/commands/typed/review_write.rs`: `:w` in the stream. Phase 8b.
 - `helix-term/src/keymap/review.rs`: the stream keymap overlay.
 - `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
 - Phase 6: `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, restored from `archive/diff-review` and adapted.
@@ -350,7 +373,8 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 7b. Line edits | Done | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400. Actual: about 240, plus 180 of tests. | Medium: the rules at run edges |
 | 7c. Indent | Done | The stream takes the indent style of the file under the cursor | 20–50. Actual: about 45, plus 30 of tests. | Low |
 | 7d. Cleanup | Done | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60. Actual: about 35, plus 45 of tests. | Low |
-| 8. Undo and save | Planned | Stream log, keymap swaps, `:w` | 300–500 | Medium |
+| 8a. Undo | Planned | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300 | Medium: histories across files, the cursor after |
+| 8b. Save | Planned | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200 | Low: a copied chain, and one wrapped callback |
 | 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
@@ -557,6 +581,24 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
 - A file shown in a view since, by `ret` for example, stays open, and so does one with unsaved changes, as any buffer would.
 - A one-letter search in the tests could match the random temp directory in a header row, about one run in ten for `/B`. The test anchors it, and an older `/x5` too.
 
+### 6.16 Phase 8: the split
+
+Planned 2026-10-18, after the human tried the editing. Nothing here is built yet.
+
+- Phase 8 split into 8a–8b, one line each:
+  - 8a: Undo and redo the review's edits in the files they changed.
+  - 8b: Write the review's files with `:w`.
+- 8a goes first. It's the riskier half, and 8b logs the save's edits as 8a's steps.
+- Steps are logged where the files' changes are committed: `commit_files` for forwarded edits, and `:review-restore`, which commits each file at once and logs them all as one step.
+  A commit that changes nothing logs nothing, like an accepted completion's replace by the same text (6.12). So two steps never name the same revision.
+- A step's revision after is a child of the one before, so an undo that passes the check lands on the one before.
+- `History` keeps a revision's last child private and isn't `Clone`, so a redo can't be checked before it runs. It runs, and is undone again if it landed on another revision.
+- `Document::undo` takes a view, and the stream's view has a selection in every file the review edits: `apply_to_file` gives it one, and so does `ret`, which shows the file in that same view.
+  The undo puts back that view's selection in the file, which `apply_to_file` set at the step's first change. That's where the stream's cursor goes.
+- The sync at the start of `handle_event` forwards and commits before `u` runs, so a step from the key before is in the log by then.
+- 8b's format step can be tested without a language server: `test_syntax_loader` takes language overrides, so a test can set an external formatter.
+- Each file in the copy of `write_all_impl` picks its view as upstream does, with `get_synced_view_id`. That's the stream's view for any file the review edited.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -565,7 +607,9 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
 | An edit slips past the read-only guard | Guard, phase 1 | The check runs before every frame and compares the buffer's version, so any edit is put back before it's drawn. |
 | Stream and source drift apart | Sync, phase 7 | One exact changeset per sync, from the stream's history. A file that moved under an edit refuses it. Debug builds assert after each sync that every editable row equals its source line. |
 | A completion reverts a relayout into the file | Completion in the stream, phase 7a | Hold the reconcile while a completion menu is open. A test selects a word completion on an edited line, and the file gets the word once. |
-| Undo surprises | Stream log, phase 8 | Undo only when the source's revision matches. Otherwise stop and name the file. |
+| Undo surprises | Stream log, phase 8a | Undo only when every file's revision matches the step. Otherwise undo nothing and name the file. |
+| A save's edits stop `u` in the review | `:w`, phase 8b | The review's `:w` logs its trims and formats as steps. Code actions on save aren't logged. |
+| The copied save chain falls behind upstream's | `:w`, phase 8b | The ledger lists the copy with `typed.rs`, which a rebase reads for each entry. |
 | An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete, and leaves insert mode, as phase 1 does. |
 | Slow big reviews | Refresh, reconcile | Re-diff only stale files. Size caps per file. Load sources only when edited. Each keystroke relays out the stream, so 7a measures one. |
 | Upstream churn | `ui/editor.rs` (9/yr), `commands.rs` (39/yr) | Seams stay one line. Bodies live in fork files. |
@@ -573,12 +617,16 @@ Planned 2026-10-18, after the human tried the read-only review. Nothing here is 
 
 ## 8. Open decisions
 
-1. **Undo when a source moved on**, for phase 8. Stop and name the file (recommended), or undo anyway in that file's own history.
-2. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+1. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
 
 Decided, 2026-10-18:
 
 - **Relayout is live**, as you type, like Zed. Not deferred until `Esc`.
+- **Undo when a file moved on** stops, undoes nothing, and names the file. It doesn't undo the file's own latest change.
+- **`u` in the review undoes `:review-restore`** too, as one step.
+- **`:w` in the review writes every file it shows with unsaved changes**, not only the ones the review edited, as Zed's project diff saves.
+- **The save's own edits are steps in the log**, so `u` after `:w` undoes a format or a final newline first, as in a file.
+- **No seams for `:x` and `:update`.** In the review they write nothing, and the book says to use `:w`.
 
 Decided, 2026-10-17:
 
