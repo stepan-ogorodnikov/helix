@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 8 done 2026-10-18. The read-only review, phases 1–6, editing in it, phase 7, and undo and save, phase 8, are complete. The human checks phases 7–8 by hand next. LSP, phase 9, waits for its scope (8).
+Status: phase 9 planned 2026-10-18, as 9a–9c, with completion a later spike, 9d (6.19). Phases 1–8 are complete, and the human checks 7–8 by hand. Phase 9 waits for approval.
 
 ## Bottom line
 
@@ -18,7 +18,7 @@ Status: phase 8 done 2026-10-18. The read-only review, phases 1–6, editing in 
 - **How:** the stream is an ordinary Helix document. Fork-owned code builds it and keeps it current through upstream's events and public API.
 - **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 3.
   None is in `document.rs` or `application.rs`. `ui/editor.rs` takes the most, about 5–7.
-- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP in the stream is unknown until a spike.
+- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP adds 0.4–0.65k for diagnostics, goto, hover, code actions, and rename. Completion is unknown until a spike.
 - **Biggest risks:** keeping the cursor still while rows appear and vanish around it (phase 2, which the read-only review already needs).
   Then, for editing, the sync engine, undo across files, and completion.
 
@@ -283,31 +283,63 @@ The seams pass whether a menu is open, from `EditorView::completion`.
 **Until phase 8a**, `u` in the stream finds an empty history, and `ret` then `u` undoes in the file.
 **Until phase 8b**, `:w` in the stream fails, as in phase 1, and `:wa` writes every file.
 
-**Until phase 9**, editing in the stream is plain text editing:
+**Until phase 9a**, the stream has no LSP hover or goto. Completion waits for 9d's spike. Until then, editing in the stream is plain text editing:
 
-- no LSP completion, hover, or goto. Word and path completion work, as in any buffer.
+- no LSP completion. Word and path completion work, as in any buffer.
 - new lines copy the previous line's indent, since the stream has no indent queries
 - no format on type
 
 ### 3.10 LSP (phase 9)
 
-Diagnostics come first, need only their hook's registration in `handlers.rs`, and don't need editing. They could move into the read-only milestone.
-A `DiagnosticsDidChange` hook gets `&mut Editor`, maps each source's diagnostics onto its rows, and calls `replace_diagnostics` on the stream.
-Inline diagnostics, `]d`, and the diagnostics gutter then work as in any buffer. Only open files have diagnostics.
+Language servers know only files that are open in a buffer, and the stream isn't one of them: it has no path and no servers.
+So each LSP feature in the stream works through the file under the cursor. Scope decided 2026-10-18 (8).
 
-Goto, hover, references, rename, and code actions:
+**Goto, references, hover, and code actions (9a): the stream lends its view.**
 
-- They need stream versions that send the request for the source document, at the mapped position, bound in the stream's keymap.
-- Upstream's versions read the current document. `commands/lsp.rs` has 19 `doc!`/`current!` call sites.
-- The spike decides between copying their result handling and seaming them.
+- Upstream's commands build their request from the focused view's buffer at once, and their answers never read that buffer again (6.19):
+  - goto and references jump from the current view, so `C-o` returns to the stream;
+  - hover's popup sits at the current view's cursor;
+  - a code action applies its edits by path, through its server.
+- So the stream's version points the focused view at the file's buffer, with the selection at the cursor's place in the file, calls upstream's command, and points the view back.
+  All of it runs inside one key, with no render between.
+- The file's buffer is loaded first, in the background, as an edit loads it, and closes with the stream (7d). Nothing is preloaded.
+  When the file has no running server yet, the status says its server is starting, instead of upstream's `No definition found.` The key works again once the server is up.
+- A cursor on a removed row, a header, or a gap has no place in the file, and the command says so. A staged review refuses, since its rows show the index.
+- The stream's keymap swaps `goto_definition`, `goto_declaration`, `goto_type_definition`, `goto_implementation`, `goto_reference`, `hover`, and `code_action` for the lending versions, on whatever keys you bound them to.
+  The versions are built in `keymap/review.rs` as `MappableCommand::Static` and aren't in the command table. They exist only as swaps, so `commands.rs` grows no rows.
+- Not lent, and left as upstream has them:
+  - workspace symbols and select-references read the focused buffer again in their answers;
+  - document symbols and the diagnostics picker show one file's, and the stream has no single file to show.
 
-Completion is the likely first real core change:
+**Diagnostics (9b).**
 
-- The request has to go to the source's servers, and the item's edits have to map back into the stream.
-- The code is in `handlers/completion/` and `ui/completion.rs`.
+- Each file's diagnostics go onto its rows.
+  An open file's come from its buffer, which moves them as you type.
+  A file that isn't open gets what its servers reported for it, which Helix keeps by path. Many servers report only open files. rust-analyzer's `cargo check` reports the whole workspace.
+- A diagnostic goes on the row of its source line, at the same column. One that spans lines ends at the last row shown, or at its first row's end.
+  Removed rows, headers, and gaps get none.
+- No hook. The check at the start of `render` and `handle_event` compares each file's report with the one it last placed, as it compares versions (6.3).
+  A report for a file that isn't open dispatches no event anyway. A relayout places them all again, which covers an open buffer's diagnostics moving as you type.
+- In the stream they then work as in any buffer: inline diagnostics, `]d`, `[d`.
+- The diagnostics gutter shows only diagnostics from the buffer's own servers, and the stream has none.
+  A stream branch at the top of `gutter.rs`'s `diagnostic` draws the dot without that filter, as `line_numbers` and `diff` have their branches.
+
+**Rename (9c).**
+
+- Rename's prompt reads the focused buffer again on confirm, when it's the stream again, so it can't be lent.
+- The stream's own rename opens a prompt prefilled with the word under the cursor. On confirm it sends the request to the file's server, at the place the cursor had, and applies the edit as upstream does.
+- It leaves out `prepareRename`, the server's own range and placeholder. A file that changed while the prompt was open refuses the rename.
+
+**Completion and signature help (9d, a spike after 9a–9c).**
+
+- They start from the completion handler while you type, not from a command, so the view can't be lent.
+- The request is built from the focused buffer (`handlers/completion/request.rs`). Item edits are positions in the file, applied to the focused buffer (`ui/completion.rs`).
+  Auto-import edits land near the file's top, usually in hidden lines, so they'd go to the file's buffer directly.
 - Preview inserts are ghost transactions: a savepoint restore, then the final edit. The sync forwards them all in order, so the source sees the preview too.
+- That takes seams inside upstream functions, in helix-term, not helix-core. The spike says how many, and whether they're worth it. It may end in not doing it.
 
-Rejected: switching the view to the source document while a command runs. Completion and goto answer asynchronously, after the switch back.
+Rejected: lending the view for completion. Its answer arrives after the view shows the stream again.
+Goto and hover answer late too, but their answers don't read the buffer they asked from.
 
 ## 4. Upstream seams
 
@@ -319,12 +351,12 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-view/src/editor.rs` | | One condition in `Editor::switch` that keeps the stream when you leave it | 1 |
 | `helix-view/src/lib.rs` | 3 | `pub mod review;` | 1 |
 | `helix-view/src/gutter.rs` | 3 | Stream branches in `line_numbers` and `diff` | 1 |
+| `helix-view/src/gutter.rs` | | Stream branch in `diagnostic` | 9b |
 | `helix-term/src/ui/editor.rs` | 9 | Keymap field on `EditorView`, swapped in for the stream at the start of `handle_event` | 1 |
 | `helix-term/src/ui/editor.rs` | | `review::sync` at the start of `render` | 1 |
 | `helix-term/src/ui/editor.rs` | | `render_view`: one decoration, overlays, highlighter off for the stream | 4–5 |
 | `helix-term/src/ui/editor.rs` | | Sync at the start of `handle_event`, and whether a completion menu is open, passed to both syncs | 7a |
 | `helix-term/src/keymap.rs` | | `pub mod review;` | 1 |
-| `helix-term/src/handlers.rs` | 4 | `mod review;` and its `register_hooks` call, for the diagnostics hook | 9 |
 | `helix-term/src/commands.rs` | 39 | Static command rows and one-line wrappers | 1, 3, 6, 8a |
 | `helix-term/src/commands/typed.rs` | 18 | Typable rows and `mod` lines | 1–2, 6, 8b |
 | `helix-term/src/commands/typed.rs` | | The `write_impl` seam | 8b |
@@ -332,7 +364,7 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-view/Cargo.toml` | 10 | `imara-diff`, unless the diff goes through `helix-vcs` | 1 |
 | `book/src/*` | | Commands, keys, theme scopes | each |
 | `helix-term/tests/integration.rs` | 1 | `mod fork_review;` | 1 |
-| `helix-term/src/commands/lsp.rs`, `handlers/completion/*`, `ui/completion.rs` | 6, 0, 1 | Not known until the phase 9 spike | 9 |
+| `helix-term/src/handlers/completion/*`, `ui/completion.rs` | 0, 1 | Not known until the 9d spike | 9d |
 
 Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 
@@ -345,9 +377,10 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 - `helix-view/src/review/forward.rs`: checks stream changes and maps them to per-source transactions. Pure, unit-tested. Phases 7a–7b.
 - `helix-view/src/review/sync.rs`: the read-only restore and refresh (phases 1–2), then the sync and loading sources (phase 7).
 - `helix-view/src/review/log.rs`: the undo log, and undo and redo across the files. Phase 8a.
-- `helix-term/src/handlers/review.rs`, phase 9: the `DiagnosticsDidChange` hook.
+- `helix-view/src/review/diagnostics.rs`: places each file's diagnostics on its rows. Phase 9b.
 - `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and redo.
 - `helix-term/src/commands/typed/review_write.rs`: `:w` in the stream. Phase 8b.
+- `helix-term/src/commands/review/lsp.rs`: the lending versions of goto, references, hover, and code actions, and the stream's rename. Phases 9a and 9c.
 - `helix-term/src/keymap/review.rs`: the stream keymap overlay.
 - `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
 - Phase 6: `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, restored from `archive/diff-review` and adapted.
@@ -375,7 +408,11 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 7d. Cleanup | Done | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60. Actual: about 35, plus 45 of tests. | Low |
 | 8a. Undo | Done | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300. Actual: about 290, plus 180 of tests. | Medium: histories across files, the cursor after |
 | 8b. Save | Done | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200. Actual: about 185, of it 60 copied, plus 125 of tests. | Low: a copied chain, and one wrapped callback |
-| 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
+| **LSP** | | | **0.4–0.65k** | |
+| 9a. Goto and hover | Planned | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250 | Medium: the lend has to leave no trace |
+| 9b. Diagnostics | Planned | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250 | Low |
+| 9c. Rename | Planned | Rename from the stream, through its own prompt | 80–150 | Low |
+| 9d. Completion | Spike, later | Completion and signature help from the file's servers | Unknown | **High**: seams inside upstream functions |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
 Each later phase adds to it. Phase 2 comes second because it's the riskiest phase that the read-only review needs, and phase 7 reuses its reconcile.
@@ -617,6 +654,31 @@ Planned 2026-10-18, after the human tried the editing. Nothing here is built yet
 - The format test sets `tr` as an external formatter through `test_syntax_loader`'s overrides, so it runs on Unix only. Turning off either log call fails its test.
 - `test_key_sequence` closes the app when it's done, so a `run_until` after it finds no view. The save test waits with `run_until` for both steps.
 
+### 6.19 Phase 9: the split
+
+Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built yet.
+
+- Phase 9 split into 9a–9d, one line each:
+  - 9a: Send goto, references, hover, and code actions from the review to the file's language server.
+  - 9b: Show the files' diagnostics on the review's rows.
+  - 9c: Rename symbols from the review.
+  - 9d: a spike on completion and signature help, after the human has used 9a–9c.
+- The lend goes first. It's the riskier of the three, and none of them depends on another.
+  In the discussion before this plan, diagnostics were 9a. They swapped places for that rule.
+- The lend, checked in `commands/lsp.rs`:
+  - `goto_single_impl`, `goto_reference`, `hover`, and `code_action` read `current!` or `current_ref!` only before their request goes out.
+  - Their answers use only the locations, the hovers, or actions bound to a server id. `jump_to_location` pushes the jump from the current view, and an `Action` runs on the `Editor` with its server.
+  - `rename_symbol`'s prompt calls `current!` on confirm. `select_references_to_symbol_under_cursor` sets the answer as the selection of `current!`. `workspace_symbol_picker`'s query callback reads `doc!(editor)` on each query.
+  - The plan had rejected switching the view (3.10). That holds for completion and for these three, not for the rest.
+- `MappableCommand::Static` is a public variant, so the keymap overlay can build the lending commands without command-table rows.
+- Only `gutter.rs`'s `diagnostic` filters diagnostics by the buffer's servers. Inline diagnostics and `]d` read the buffer's diagnostics as they are.
+- `handle_lsp_diagnostics` dispatches `DiagnosticsDidChange` only for an open buffer. Reports for other files go into `Editor::diagnostics`, by URI, with no event.
+  `Diagnostic` has no `PartialEq`, but `lsp::Diagnostic` has, so the check compares the reports.
+  `Document::lsp_diagnostic_to_diagnostic` converts a report for a file that isn't open, with the file's text and its server's offset encoding.
+- Language servers start when `Editor::open` opens a buffer, and `language_servers_with_feature` lists only initialized ones. That's why the first lent key can find none.
+- Completion: `request_completions` reads `current_ref!` and takes its savepoint there. `ui/completion.rs` converts item ranges against the focused buffer's text.
+- No `handlers.rs` seam after all. The plan's `DiagnosticsDidChange` hook would miss reports for files that aren't open.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -631,13 +693,20 @@ Planned 2026-10-18, after the human tried the editing. Nothing here is built yet
 | An edit refused halfway through a command | Checks, phase 7 | Revert the whole window, explain in the status line. `c` over a removed row reverts the delete, and leaves insert mode, as phase 1 does. |
 | Slow big reviews | Refresh, reconcile | Re-diff only stale files. Size caps per file. Load sources only when edited. Each keystroke relays out the stream, so 7a measures one. |
 | Upstream churn | `ui/editor.rs` (9/yr), `commands.rs` (39/yr) | Seams stay one line. Bodies live in fork files. |
-| LSP needs core changes | Phase 9 | Spike first. Diagnostics need none. Without the rest, the stream still works for editing. |
+| The lend leaves the view on the file | Phase 9a | The view goes back as soon as upstream's command returns, with nothing between. A test checks the view and its selection after a lent command. |
+| Upstream starts reading the focused buffer in an answer | Phase 9a, on a rebase | The ledger lists the lent commands. A rebase that touches `commands/lsp.rs` rereads them. |
+| Completion needs seams inside upstream functions | Phase 9d | A spike first, after 9a–9c, which may end in not doing it. Without it, the stream keeps word and path completion. |
 
 ## 8. Open decisions
 
-1. **LSP scope**, for phase 9. Which of diagnostics, goto, hover, and completion are must-haves. Completion decides whether phase 9 touches core code.
+None.
 
 Decided, 2026-10-18:
+
+- **LSP scope:** diagnostics, goto, references, hover, code actions, and rename, as 9a–9c. Completion and signature help wait for a spike, 9d.
+- **Diagnostics of files that aren't open** show too, from what their servers reported.
+- **The diagnostics gutter gets a stream branch**, so the stream shows the dot.
+- **A lent command loads its file on the first key.** Nothing is preloaded, so the first key can find the server still starting.
 
 - **Relayout is live**, as you type, like Zed. Not deferred until `Esc`.
 - **Undo when a file moved on** stops, undoes nothing, and names the file. It doesn't undo the file's own latest change.
