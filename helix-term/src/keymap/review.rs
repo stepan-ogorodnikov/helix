@@ -42,6 +42,10 @@ fn replace_commands(keys: &mut KeyTrie) {
         "goto_prev_change" => Some(MappableCommand::review_prev_hunk),
         "goto_first_change" => Some(MappableCommand::review_first_hunk),
         "goto_last_change" => Some(MappableCommand::review_last_hunk),
+        // WHY: the review's log is a line, with no branches to step through,
+        // so one step earlier is one undo.
+        "undo" | "earlier" => Some(MappableCommand::review_undo),
+        "redo" | "later" => Some(MappableCommand::review_redo),
         _ => None,
     };
     match keys {

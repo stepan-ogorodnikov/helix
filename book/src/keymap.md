@@ -467,12 +467,14 @@ you to selectively add search terms to your selections.
 `:review` shows the changes of every changed file in one buffer, diffed against `HEAD`.
 `:review unstaged` diffs the index against the files instead, and `:review staged` diffs `HEAD` against the index, which a staged review never takes from a file's buffer. `:review all` is the default.
 `:stage-hunk` and `:unstage-hunk` write every hunk the selections touch to the index, whole, and read the review again. They run `git`, so they need a [trusted workspace](./workspace-trust.md).
-`:review-restore` puts the base's text back over those hunks in each file's buffer, unsaved, so `u` in the file undoes it. `:review-context <n>` shows `n` unchanged lines around each hunk, 3 at first.
+`:review-restore` puts the base's text back over those hunks in each file's buffer, unsaved, so `u` in the review or the file undoes it. `:review-context <n>` shows `n` unchanged lines around each hunk, 3 at first.
 Each file starts with a row naming it and how it changed. Its hunks follow with 3 lines of context, and a row counts the unchanged lines left out between them.
 The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
 
 An edit to added or unchanged lines goes to the file's buffer as you type, new and deleted lines too, and the rows follow it: an edited line gets its old version above it.
-A file that isn't open gets a buffer in the background, which closes with the review unless it shows in a view or holds unsaved changes. Nothing is saved until you write it, with `:wa` for example, and `u` in the file undoes the edit.
+A file that isn't open gets a buffer in the background, which closes with the review unless it shows in a view or holds unsaved changes. Nothing is saved until you write it, with `:wa` for example.
+`u` in the review undoes its last edit in every file the edit changed, and `U` redoes it. One command, or one insert, is one step, and so is a `:review-restore`.
+When one of those files changed since in another way, in its own view for example, nothing is undone, and the status line names the file. `u` in that file undoes there.
 A new line takes the file's line ending, and `Tab` and `>` the file's indent. An edit to a file's last line gives it a line ending if it had none.
 An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is one that would join a line to such a row. A staged review takes no edits.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
@@ -485,6 +487,10 @@ The review swaps these commands for its own, on whatever keys they're bound to:
 | `[g` | `goto_prev_change`  | `review_prev_hunk`: select the previous hunk |
 | `]G` | `goto_last_change`  | `review_last_hunk`: select the last hunk   |
 | `[G` | `goto_first_change` | `review_first_hunk`: select the first hunk |
+| `u`  | `undo`              | `review_undo`: undo the review's last edit in the files it changed |
+| `U`  | `redo`              | `review_redo`: redo the review's last undone edit |
+| `Alt-u` | `earlier`        | `review_undo`                              |
+| `Alt-U` | `later`          | `review_redo`                              |
 
 And it adds these keys:
 

@@ -1,6 +1,6 @@
 //! `:review-restore` puts the base's text back over the hunks the selection
-//! touches in the review, in each file's buffer, so `u` there undoes it. The
-//! review follows the buffer like any other edit.
+//! touches in the review, in each file's buffer, as one step of the review's
+//! undo log. The review follows the buffer like any other edit.
 
 use anyhow::{bail, Context as _};
 use helix_core::command_line::Args;
@@ -72,9 +72,7 @@ fn restore(
         Some(doc) => doc.id(),
         None => review::load(editor, path)?,
     };
-    let focus = editor.tree.focus;
-    let doc = editor.documents.get_mut(&doc_id).expect("just found");
-    let text = doc.text().clone();
+    let text = editor.documents[&doc_id].text().clone();
     let hunks = layout::hunks(base, &text).context("The file is too large to diff")?;
     let picked: Vec<_> = hunks
         .iter()
@@ -93,7 +91,6 @@ fn restore(
         )
     });
     let transaction = Transaction::change(&text, changes);
-    review::apply_to_file(doc, focus, &transaction);
-    doc.append_changes_to_history(editor.tree.get_mut(focus));
+    review::edit_file(editor, doc_id, editor.tree.focus, &transaction);
     Ok(picked.len())
 }

@@ -9,7 +9,7 @@ use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
 use helix_vcs::ChangeView;
 
-use super::{apply_to_file, forward, layout, update, Content, Row, Stream};
+use super::{edit_file, forward, layout, log, update, Content, Row, Stream};
 use crate::document::{from_reader, DocumentOpenError, Mode};
 use crate::editor::Action;
 use crate::tree::Tree;
@@ -185,10 +185,10 @@ fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), Stri
         Err(message) => return refuse(editor, &message),
     };
 
-    for (edit, doc) in edits.iter().zip(&docs) {
-        let doc = editor.documents.get_mut(doc).expect("found above");
-        let transaction = Transaction::change(doc.text(), edit.changes.iter().cloned());
-        apply_to_file(doc, view, &transaction);
+    for (edit, &doc) in edits.iter().zip(&docs) {
+        let text = editor.documents[&doc].text();
+        let transaction = Transaction::change(text, edit.changes.iter().cloned());
+        edit_file(editor, doc, view, &transaction);
     }
     let doc = editor.documents.get_mut(&doc_id).expect("checked above");
     settle(doc, &mut editor.tree, view);
@@ -220,9 +220,6 @@ fn take_edits(editor: &mut Editor, doc_id: DocumentId) -> Option<Result<(), Stri
         file.hunks = Default::default();
         file.indent = Default::default();
         file.seen = Some((id, version));
-        if !stream.pending.iter().any(|&(doc, _)| doc == id) {
-            stream.pending.push((id, view));
-        }
     }
     stream.relayout = true;
     // INVARIANT: the forwarded edit made each file what its rows show.
@@ -314,9 +311,17 @@ fn commit_files(editor: &mut Editor, doc_id: DocumentId) {
     if editor.mode == Mode::Insert && editor.tree.get(focus).doc == doc_id {
         return;
     }
+    commit_pending(editor);
+}
+
+/// Commits the changes forwarded to the files since the last commit, as one
+/// step of the review's undo log.
+pub(super) fn commit_pending(editor: &mut Editor) {
+    let focus = editor.tree.focus;
     let Some(stream) = editor.review.stream.as_mut() else {
         return;
     };
+    let mut step = Vec::new();
     for (doc, view) in std::mem::take(&mut stream.pending) {
         let Some(doc) = editor.documents.get_mut(&doc) else {
             continue;
@@ -326,8 +331,11 @@ fn commit_files(editor: &mut Editor, doc_id: DocumentId) {
             false => focus,
         };
         doc.ensure_view_init(view);
+        let before = doc.get_current_revision();
         doc.append_changes_to_history(editor.tree.get_mut(view));
+        step.extend(log::Commit::since(doc, before));
     }
+    stream.log.push(step);
 }
 
 pub(super) fn save_selections(editor: &mut Editor, doc_id: DocumentId) {
@@ -384,7 +392,7 @@ pub(super) fn put_back(editor: &mut Editor, doc_id: DocumentId) -> bool {
     true
 }
 
-fn follow_sources(editor: &mut Editor, doc_id: DocumentId) -> bool {
+pub(super) fn follow_sources(editor: &mut Editor, doc_id: DocumentId) -> bool {
     // WHY: a hidden stream waits. `update` commits through a view of it, and
     // nothing shows the rows until one does.
     if !editor.tree.views().any(|(view, _)| view.doc == doc_id) {

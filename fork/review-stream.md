@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 8 planned 2026-10-18, as 8a–8b (6.16). The read-only review, phases 1–6, and editing in it, phase 7, are complete, and the human tried the editing. Phase 8 waits for approval.
+Status: phase 8a done 2026-10-18. The read-only review, phases 1–6, and editing in it, phase 7, are complete, and so is undo in it, 8a. Saving from it, 8b, is next.
 
 ## Bottom line
 
@@ -373,7 +373,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 7b. Line edits | Done | Edits that add or remove lines: the rules at a run's edges, `O` at a run's start, a last line with no line ending, mapping rows, the file's line ending | 250–400. Actual: about 240, plus 180 of tests. | Medium: the rules at run edges |
 | 7c. Indent | Done | The stream takes the indent style of the file under the cursor | 20–50. Actual: about 45, plus 30 of tests. | Low |
 | 7d. Cleanup | Done | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60. Actual: about 35, plus 45 of tests. | Low |
-| 8a. Undo | Planned | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300 | Medium: histories across files, the cursor after |
+| 8a. Undo | Done | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300. Actual: about 290, plus 180 of tests. | Medium: histories across files, the cursor after |
 | 8b. Save | Planned | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200 | Low: a copied chain, and one wrapped callback |
 | 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
 
@@ -598,6 +598,15 @@ Planned 2026-10-18, after the human tried the editing. Nothing here is built yet
 - The sync at the start of `handle_event` forwards and commits before `u` runs, so a step from the key before is in the log by then.
 - 8b's format step can be tested without a language server: `test_syntax_loader` takes language overrides, so a test can set an external formatter.
 - Each file in the copy of `write_all_impl` picks its view as upstream does, with `get_synced_view_id`. That's the stream's view for any file the review edited.
+
+### 6.17 Phase 8a: found
+
+- `apply_to_file` became `edit_file`, which also queues the file for the next commit. `:review-restore` goes through it, so a restore commits at the next sync, as one step, instead of at once.
+- A file has moved on when its revision isn't the step's, or it has changes not yet committed. `u` in the file's own view that brings it back to the step's revision lets the review's `u` go ahead. A test covers both.
+- The messages: `<file> changed after this edit, so nothing was undone`, `<file> changed after the undo, so nothing was redone`, and `<file> is closed, so nothing was undone`.
+- With a count, the cursors go where the last step walked put them. Undo pushes no jump, as upstream's doesn't.
+- The commit before an undo from insert mode has no test. Upstream binds no undo key in insert mode.
+- In the tests, `gg` in a file pushes a jump, so one `C-o` stays in the file. The tests edit there with `A`.
 
 ## 7. Risks
 

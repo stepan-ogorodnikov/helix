@@ -19,17 +19,19 @@ use helix_core::{Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange, Hunk};
 
 use crate::editor::Action;
-use crate::{align_view, current, view, Align, Document, DocumentId, Editor, ViewId};
+use crate::{align_view, current, view, Align, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
 mod forward;
 pub(crate) mod gutter;
 pub mod layout;
+mod log;
 mod reconcile;
 mod sync;
 mod syntax;
 mod words;
 
+pub use log::{redo, undo};
 pub use sync::{load, sync};
 pub use syntax::overlays as syntax_overlays;
 
@@ -154,6 +156,7 @@ pub struct Stream {
     loaded: Vec<DocumentId>,
     /// Whether an edit was forwarded since the rows were laid out.
     relayout: bool,
+    log: log::Log,
 }
 
 /// The rows of each hunk: a run of removed and added rows.
@@ -547,21 +550,31 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         pending: Vec::new(),
         loaded: Vec::new(),
         relayout: false,
+        log: log::Log::default(),
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
     to_top(editor, doc_id);
 }
 
-/// Applies `transaction` to a file's buffer from the review's `view`.
-pub fn apply_to_file(doc: &mut Document, view: ViewId, transaction: &Transaction) {
-    doc.ensure_view_init(view);
-    // WHY: `u` in the file puts back the selection this view had in it before
-    // the first change. Left where `Action::Load` put it, that's the file's
-    // start.
+/// Applies `transaction` to a file's buffer from the review's `view`. The next
+/// sync outside insert mode commits it, as part of one step of the review's
+/// undo log.
+pub fn edit_file(editor: &mut Editor, doc: DocumentId, view: ViewId, transaction: &Transaction) {
+    let Some(file) = editor.documents.get_mut(&doc) else {
+        return;
+    };
+    file.ensure_view_init(view);
+    // WHY: `u` puts back the selection this view had in the file before the
+    // first change. Left where `Action::Load` put it, that's the file's start.
     if let Some((from, ..)) = transaction.changes_iter().next() {
-        doc.set_selection(view, Selection::point(from));
+        file.set_selection(view, Selection::point(from));
     }
-    doc.apply(transaction, view);
+    file.apply(transaction, view);
+    if let Some(stream) = editor.review.stream.as_mut() {
+        if !stream.pending.iter().any(|&(pending, _)| pending == doc) {
+            stream.pending.push((doc, view));
+        }
+    }
 }
 
 fn to_top(editor: &mut Editor, doc: DocumentId) {
@@ -841,6 +854,7 @@ mod tests {
             pending: Vec::new(),
             loaded: Vec::new(),
             relayout: false,
+            log: log::Log::default(),
         }
     }
 

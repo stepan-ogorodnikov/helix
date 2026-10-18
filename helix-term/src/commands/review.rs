@@ -471,6 +471,18 @@ fn step_file(cx: &mut Context, direction: Direction) {
     });
 }
 
+pub(super) fn undo(cx: &mut Context) {
+    if stream_rows(cx.editor, |_| ()).is_some() {
+        review::undo(cx.editor, cx.count());
+    }
+}
+
+pub(super) fn redo(cx: &mut Context) {
+    if stream_rows(cx.editor, |_| ()).is_some() {
+        review::redo(cx.editor, cx.count());
+    }
+}
+
 fn stream_rows<T>(editor: &mut Editor, rows: impl Fn(&Stream) -> T) -> Option<T> {
     let rows = editor.review.stream_of(view!(editor).doc).map(rows);
     if rows.is_none() {

@@ -644,6 +644,187 @@ async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
     .await
 }
 
+fn selections(app: &Application) -> usize {
+    let (view, doc) = current_ref!(app.editor);
+    doc.selection(view.id).len()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn u_and_shift_u_in_the_review_walk_its_edits_across_files() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+    let review = stream_text(&app);
+    let source = "1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n";
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("%s^(two|B)$<ret>cX<esc>/^nine<ret>iY<esc>2u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &a).as_deref(), Some(source));
+                    assert_eq!(
+                        buffer_text(app, &b).as_deref(),
+                        Some("B\n"),
+                        "one command's edits to two files are one step"
+                    );
+                    assert_eq!(stream_text(app), review);
+                    assert_eq!(
+                        (cursor(app), selections(app)),
+                        ((3, 0), 2),
+                        "a cursor where each file's edit began"
+                    );
+                }),
+            ),
+            (
+                Some("U"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &a).as_deref(),
+                        Some("1\nX\n3\n4\n5\n6\n7\n8\nnine\n10\n"),
+                        "the oldest undone step first"
+                    );
+                    assert_eq!(buffer_text(app, &b).as_deref(), Some("X\n"));
+                }),
+            ),
+            (
+                Some("UU"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &a).as_deref(),
+                        Some("1\nX\n3\n4\n5\n6\n7\n8\nYnine\n10\n")
+                    );
+                    assert_eq!(status(app), "Already at newest change");
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn u_in_the_review_stops_at_a_file_that_moved_on() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    let source = "1\n2\n3\n4\n5\n6\nseven\n8\n9\n10\n";
+    let name = shown(file.clone());
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/^seven<ret>ix<esc><ret>Ay<esc><C-o>u"),
+                Some(&|app| {
+                    assert!(in_stream(app));
+                    assert_eq!(
+                        status(app),
+                        format!("{name} changed after this edit, so nothing was undone")
+                    );
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("1\n2\n3\n4\n5\n6\nxseveny\n8\n9\n10\n")
+                    );
+                }),
+            ),
+            (
+                Some("<ret>u<C-o>u"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some(source),
+                        "the file is back where the review left it"
+                    );
+                }),
+            ),
+            (
+                Some("<ret>Az<esc>u<C-o>U"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        format!("{name} changed after the undo, so nothing was redone")
+                    );
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some(source),
+                        "a redo would take the file's newer branch"
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn u_in_the_review_undoes_a_restore_in_every_file() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+    let review = stream_text(&app);
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("%:review-restore<ret>"),
+                Some(&|app| {
+                    assert_eq!(status(app), "Restored 3 changes");
+                    assert_eq!(buffer_text(app, &a).as_deref(), Some(TEN));
+                }),
+            ),
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &a).as_deref(),
+                        Some("1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n")
+                    );
+                    assert_eq!(buffer_text(app, &b).as_deref(), Some("B\n"));
+                    assert_eq!(stream_text(app), review);
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_staged_review_undoes_nothing() -> anyhow::Result<()> {
+    let repo = seventh_changed();
+    let file = repo.path().join("a.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "/^seven<ret>ix<esc>:review staged<ret>", |app| {
+        status(app) == "There are no staged changes to review"
+    })
+    .await?;
+
+    test_key_sequence(
+        &mut app,
+        Some("u"),
+        Some(&|app| {
+            assert_eq!(
+                status(app),
+                "A staged review is read-only. ret opens the file."
+            );
+            assert_eq!(
+                buffer_text(app, &file).as_deref(),
+                Some("1\n2\n3\n4\n5\n6\nxseven\n8\n9\n10\n")
+            );
+        }),
+        false,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ret_opens_the_file_at_the_row_and_c_o_comes_back() -> anyhow::Result<()> {
     let repo = repo(
