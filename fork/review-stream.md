@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 8a done 2026-10-18. The read-only review, phases 1–6, and editing in it, phase 7, are complete, and so is undo in it, 8a. Saving from it, 8b, is next.
+Status: phase 8 done 2026-10-18. The read-only review, phases 1–6, editing in it, phase 7, and undo and save, phase 8, are complete. The human checks phases 7–8 by hand next. LSP, phase 9, waits for its scope (8).
 
 ## Bottom line
 
@@ -374,7 +374,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 7c. Indent | Done | The stream takes the indent style of the file under the cursor | 20–50. Actual: about 45, plus 30 of tests. | Low |
 | 7d. Cleanup | Done | Closing the review closes the files it loaded that are unmodified and shown in no view | 30–60. Actual: about 35, plus 45 of tests. | Low |
 | 8a. Undo | Done | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300. Actual: about 290, plus 180 of tests. | Medium: histories across files, the cursor after |
-| 8b. Save | Planned | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200 | Low: a copied chain, and one wrapped callback |
+| 8b. Save | Done | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200. Actual: about 185, of it 60 copied, plus 125 of tests. | Low: a copied chain, and one wrapped callback |
 | 9. LSP | Planned | Diagnostics, then a spike on goto, hover, and completion | 500–1,500 | **High**, unknown until the spike |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
@@ -607,6 +607,15 @@ Planned 2026-10-18, after the human tried the editing. Nothing here is built yet
 - With a count, the cursors go where the last step walked put them. Undo pushes no jump, as upstream's doesn't.
 - The commit before an undo from insert mode has no test. Upstream binds no undo key in insert mode.
 - In the tests, `gg` in a file pushes a jump, so one `C-o` stays in the file. The tests edit there with `A`.
+
+### 6.18 Phase 8b: found
+
+- A staged review refuses `:w` with its read-only message. Its rows show the index, and the save's edits would be steps it can't undo. Without the refusal, `write_impl` would trim the stream and fail on its missing path.
+- The copy trims every file before it saves any, where `write_all_impl` trims and saves one file at a time. A failed save returns through `?`, and the trims have to be logged first, as one step.
+- `make_format_callback` always returns `Callback::Editor`. The wrapper reads the file's revision around it, so a format discarded because the file changed logs nothing.
+- Helix prefixes the error: `'write': The review writes each file to its own path`. With nothing to write, the status says `No file in the review has unsaved changes`.
+- The format test sets `tr` as an external formatter through `test_syntax_loader`'s overrides, so it runs on Unix only. Turning off either log call fails its test.
+- `test_key_sequence` closes the app when it's done, so a `run_until` after it finds no view. The save test waits with `run_until` for both steps.
 
 ## 7. Risks
 

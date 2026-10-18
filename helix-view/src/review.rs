@@ -31,7 +31,7 @@ mod sync;
 mod syntax;
 mod words;
 
-pub use log::{redo, undo};
+pub use log::{log_step, redo, undo};
 pub use sync::{load, sync};
 pub use syntax::overlays as syntax_overlays;
 
@@ -367,6 +367,11 @@ impl Stream {
             .enumerate()
             .filter(|(_, row)| matches!(row, Row::Header { .. }))
             .map(|(row, _)| row)
+    }
+
+    /// The paths of the files it shows.
+    pub fn paths(&self) -> impl Iterator<Item = &Path> + '_ {
+        self.files.iter().map(|file| file.change.path())
     }
 
     pub fn gutter_width(&self) -> usize {

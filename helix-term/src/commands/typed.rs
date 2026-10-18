@@ -20,6 +20,8 @@ use ui::completers::{self, Completer};
 // FORK: :yank-diagnostics
 mod yank_diagnostics;
 
+mod review_write; // FORK: review-stream
+
 #[derive(Clone)]
 pub struct TypableCommand {
     pub name: &'static str,
@@ -385,6 +387,10 @@ fn write_impl(
     path: Option<&str>,
     options: WriteOptions,
 ) -> anyhow::Result<()> {
+    // FORK: review-stream
+    if let Some(written) = review_write::write(cx, path, options) {
+        return written;
+    }
     let config = cx.editor.config();
     let (view, doc) = current!(cx.editor);
     let doc_id = doc.id();

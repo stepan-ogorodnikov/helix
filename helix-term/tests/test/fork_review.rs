@@ -825,6 +825,133 @@ async fn a_staged_review_undoes_nothing() -> anyhow::Result<()> {
     .await
 }
 
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn w_in_the_review_writes_the_files_it_shows_with_unsaved_changes() -> anyhow::Result<()> {
+    let repo = repo(
+        &[("a.txt", TEN), ("b.txt", "b\n"), ("c.txt", "c\n")],
+        &[
+            ("a.txt", Some("1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n")),
+            ("b.txt", Some("B\n")),
+        ],
+    );
+    let path = |name| repo.path().join(name);
+    let (a, b, c, elsewhere) = (path("a.txt"), path("b.txt"), path("c.txt"), path("x.txt"));
+    let mut app = app_on(c.clone())?;
+    run_until(&mut app, "ic<esc>:review<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
+
+    let keys = format!(
+        "/^two<ret>Ax<esc>/^B<ret><ret>Ay<esc><C-o>:w {}<ret>",
+        elsewhere.display()
+    );
+    let refused = "'write': The review writes each file to its own path";
+    run_until(&mut app, &keys, |app| status(app) == refused).await?;
+    assert!(!elsewhere.exists());
+    assert_eq!(read(&a), "1\ntwo\n3\n4\n5\n6\n7\n8\nnine\n10\n");
+
+    run_until(&mut app, ":w<ret>", |app| {
+        !app.editor.document_by_path(&a).unwrap().is_modified()
+            && !app.editor.document_by_path(&b).unwrap().is_modified()
+    })
+    .await?;
+    assert_eq!(read(&a), "1\ntwox\n3\n4\n5\n6\n7\n8\nnine\n10\n");
+    assert_eq!(read(&b), "By\n", "edited in its own view, and shown");
+    assert!(
+        app.editor.document_by_path(&c).unwrap().is_modified(),
+        "the review doesn't show c.txt, whose only change isn't saved"
+    );
+    assert_eq!(read(&c), "c\n");
+    assert!(in_stream(&app));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn u_after_w_in_the_review_takes_out_the_line_ending_it_added() -> anyhow::Result<()> {
+    let repo = repo(&[("f.txt", "a\nb\nc")], &[("f.txt", Some("A\nb\nc"))]);
+    let file = repo.path().join("f.txt");
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "/^A<ret>Az<esc>:w<ret>", |app| {
+        !app.editor.document_by_path(&file).unwrap().is_modified()
+    })
+    .await?;
+    assert_eq!(read(&file), "Az\nb\nc\n");
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some("Az\nb\nc"));
+                }),
+            ),
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some("A\nb\nc"));
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+// WHY: the formatter is `tr`.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn u_after_w_in_the_review_undoes_the_format_first() -> anyhow::Result<()> {
+    let repo = repo(&[("f.upper", "a\nb\n")], &[("f.upper", Some("a\nB\n"))]);
+    let file = repo.path().join("f.upper");
+    let loader = test_syntax_loader(Some(
+        r#"
+        [[language]]
+        name = "upper"
+        scope = "text.upper"
+        file-types = ["upper"]
+        auto-format = true
+        formatter = { command = "tr", args = ["a-z", "A-Z"] }
+        "#
+        .to_string(),
+    ));
+    let mut app = AppBuilder::new()
+        .with_file(file.clone(), None)
+        .with_lang_loader(loader)
+        .build()?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "/^B<ret>Ax<esc>:w<ret>", |_| {
+        read(&file) == "A\nBX\n"
+    })
+    .await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some("a\nBx\n"));
+                }),
+            ),
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(buffer_text(app, &file).as_deref(), Some("a\nB\n"));
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn ret_opens_the_file_at_the_row_and_c_o_comes_back() -> anyhow::Result<()> {
     let repo = repo(

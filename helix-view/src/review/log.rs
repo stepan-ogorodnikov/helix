@@ -64,6 +64,19 @@ impl Commit {
     }
 }
 
+/// Logs what each file committed since the revision beside it, as one step of
+/// the review's undo log.
+pub fn log_step(editor: &mut Editor, since: &[(DocumentId, usize)]) {
+    let Some(stream) = editor.review.stream.as_mut() else {
+        return;
+    };
+    let step = since
+        .iter()
+        .filter_map(|&(doc, before)| Commit::since(editor.documents.get_mut(&doc)?, before))
+        .collect();
+    stream.log.push(step);
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Way {
     Undo,
