@@ -22,6 +22,7 @@ use crate::editor::Action;
 use crate::{align_view, current, view, Align, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
+mod diagnostics;
 mod forward;
 pub(crate) mod gutter;
 pub mod layout;
@@ -159,6 +160,7 @@ pub struct Stream {
     /// Whether an edit was forwarded since the rows were laid out.
     relayout: bool,
     log: log::Log,
+    reports: diagnostics::Reports,
 }
 
 /// The rows of each hunk: a run of removed and added rows.
@@ -558,6 +560,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         loaded: Vec::new(),
         relayout: false,
         log: log::Log::default(),
+        reports: diagnostics::Reports::new(),
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
     to_top(editor, doc_id);
@@ -759,6 +762,7 @@ fn update(editor: &mut Editor, mut files: Vec<File>, open: Option<(usize, Range<
     stream.widths = layout.widths;
     stream.relayout = false;
     sync::save_selections(editor, doc_id);
+    diagnostics::place(editor);
 }
 
 #[cfg(test)]
@@ -862,6 +866,7 @@ mod tests {
             loaded: Vec::new(),
             relayout: false,
             log: log::Log::default(),
+            reports: diagnostics::Reports::new(),
         }
     }
 

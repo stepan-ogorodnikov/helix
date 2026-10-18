@@ -1,7 +1,10 @@
-//! The stream's base and source line numbers, and its `+` and `-` signs. They
-//! take the place of the line number and diff gutters in the stream's views.
+//! The stream's base and source line numbers, its `+` and `-` signs, and its
+//! diagnostics' dots. They take the place of the line number, diff, and
+//! diagnostics gutters in the stream's views.
 
 use std::fmt::Write;
+
+use helix_core::diagnostic::Severity;
 
 use crate::gutter::GutterFn;
 use crate::{Document, Editor, Theme};
@@ -57,6 +60,40 @@ pub(crate) fn signs<'doc>(
             };
             out.push(sign);
             Some(style)
+        },
+    ))
+}
+
+/// Upstream's dots, without its filter by the buffer's own servers. The
+/// stream has none, and its diagnostics are its files'.
+pub(crate) fn diagnostics<'doc>(
+    editor: &'doc Editor,
+    doc: &'doc Document,
+    theme: &Theme,
+) -> Option<GutterFn<'doc>> {
+    editor.review.stream_of(doc.id())?;
+    let warning = theme.get("warning");
+    let error = theme.get("error");
+    let info = theme.get("info");
+    let hint = theme.get("hint");
+    let diagnostics = doc.diagnostics();
+    Some(Box::new(
+        move |line: usize, _selected: bool, first_visual_line: bool, out: &mut String| {
+            if !first_visual_line {
+                return None;
+            }
+            let first = diagnostics.partition_point(|d| d.line < line);
+            let worst = diagnostics[first..]
+                .iter()
+                .take_while(|d| d.line == line)
+                .max_by_key(|d| d.severity)?;
+            out.push('●');
+            Some(match worst.severity {
+                Some(Severity::Error) => error,
+                Some(Severity::Warning) | None => warning,
+                Some(Severity::Info) => info,
+                Some(Severity::Hint) => hint,
+            })
         },
     ))
 }

@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9a done 2026-10-18. Phases 1–8 are complete, and so is 9a, goto and hover from the stream. Diagnostics, 9b, are next, then rename, 9c. Completion is a later spike, 9d (6.19).
+Status: phase 9b done 2026-10-18. Phases 1–8 are complete, and so are 9a–9b, goto and hover from the stream and its files' diagnostics. Rename, 9c, is next. Completion is a later spike, 9d (6.19).
 
 ## Bottom line
 
@@ -316,7 +316,7 @@ So each LSP feature in the stream works through the file under the cursor. Scope
 - Each file's diagnostics go onto its rows.
   An open file's come from its buffer, which moves them as you type.
   A file that isn't open gets what its servers reported for it, which Helix keeps by path. Many servers report only open files. rust-analyzer's `cargo check` reports the whole workspace.
-- A diagnostic goes on the row of its source line, at the same column. One that spans lines ends at the last row shown, or at its first row's end.
+- A diagnostic goes on the row of its source line, at the same column. One that spans lines ends on the row of its last line, or at its first row's end when that line isn't shown.
   Removed rows, headers, and gaps get none.
 - No hook. The check at the start of `render` and `handle_event` compares each file's report with the one it last placed, as it compares versions (6.3).
   A report for a file that isn't open dispatches no event anyway. A relayout places them all again, which covers an open buffer's diagnostics moving as you type.
@@ -410,7 +410,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 8b. Save | Done | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200. Actual: about 185, of it 60 copied, plus 125 of tests. | Low: a copied chain, and one wrapped callback |
 | **LSP** | | | **0.4–0.65k** | |
 | 9a. Goto and hover | Done | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250. Actual: about 150, plus 120 of tests. | Medium: the lend has to leave no trace |
-| 9b. Diagnostics | Planned | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250 | Low |
+| 9b. Diagnostics | Done | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250. Actual: about 190, plus 105 of tests. | Low |
 | 9c. Rename | Planned | Rename from the stream, through its own prompt | 80–150 | Low |
 | 9d. Completion | Spike, later | Completion and signature help from the file's servers | Unknown | **High**: seams inside upstream functions |
 
@@ -689,6 +689,18 @@ Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built ye
 - The tests have no language server. They check the file is loaded, the selection lands at its place in the file, the view shows the stream again, and the refusals.
   Each lent command then gives upstream's answer for no server, which shows it ran. Whether a server's answer comes back right is for the manual check.
 - A server that's still starting can't be tested without one. The check reads the buffer's servers, crate-private to `helix-view`, where `lend.rs` lives.
+
+### 6.21 Phase 9b: found
+
+- Placing runs at the end of every relayout, and from the sync when a file's report in `Editor::diagnostics` differs from the one last placed.
+  The stream keeps the reports it placed, by path, to compare.
+- An open buffer's diagnostics are placed only while the rows come from its current version. One that moved waits for the relayout that follows it.
+- Helix maps the stream's own diagnostics through each edit to the stream, which is right for an edit made in the review.
+  It isn't when the review follows an edit made in the file's own view: the relayout replaces the row's text, and the diagnostic with it. Placing them again then is what keeps them on their text, and the test edits in the file to show it.
+- A range whose end is on a line the review doesn't show ends with its first row. A diagnostic on a hidden line, or on a file over the size caps, isn't shown.
+- A report outlives the server that sent it, so one with no server left is read in UTF-16, the protocol's default. That's also what lets the test publish a report with no server.
+- The gutter's dot is a copy of upstream's without the filter by the buffer's own servers, in `review/gutter.rs`. Tests can't see it. It's for the manual check.
+- A staged review shows no diagnostics: its rows are the index, and the servers report on the file.
 
 ## 7. Risks
 

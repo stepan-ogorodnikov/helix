@@ -9,7 +9,7 @@ use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
 use helix_vcs::ChangeView;
 
-use super::{edit_file, forward, layout, log, update, Content, Row, Stream};
+use super::{diagnostics, edit_file, forward, layout, log, update, Content, Row, Stream};
 use crate::document::{from_reader, DocumentOpenError, Mode};
 use crate::editor::Action;
 use crate::tree::Tree;
@@ -38,6 +38,7 @@ pub fn sync(editor: &mut Editor, completing: bool) {
         moved |= relayout(editor);
     }
     commit_files(editor, doc_id);
+    diagnostics::follow(editor);
     if moved {
         let scrolloff = editor.config().scrolloff;
         let focus = editor.tree.focus;

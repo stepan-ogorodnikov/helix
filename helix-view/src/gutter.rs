@@ -54,6 +54,10 @@ pub fn diagnostic<'doc>(
     theme: &Theme,
     _is_focused: bool,
 ) -> GutterFn<'doc> {
+    // FORK: review-stream
+    if let Some(dots) = crate::review::gutter::diagnostics(_editor, doc, theme) {
+        return dots;
+    }
     let warning = theme.get("warning");
     let error = theme.get("error");
     let info = theme.get("info");

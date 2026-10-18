@@ -98,13 +98,14 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, and code actions from it, phase 9a, are done. Diagnostics and rename, 9b–9c, are planned, with completion a later spike, 9d.
+- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, and code actions from it, and its files' diagnostics, phases 9a–9b, are done. Rename, 9c, is planned, with completion a later spike, 9d.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit to added or unchanged lines, new and deleted lines too, goes to the file's buffer as you type, loaded in the background if need be and closed with the review once saved, and the rows follow it. New lines and indents are the file's own. Any other edit is put back, and a staged review takes none.
   `u` and `U` in the review (`review_undo` and `review_redo`, swapped in for `undo`, `redo`, `earlier`, and `later`) undo and redo its edits and restores in every file they changed, and stop at a file that changed since in another way.
   `:w` in the review writes every file it shows with unsaved changes, through upstream's save chain, and `u` then undoes what the save changed first.
   `goto_definition`, `goto_declaration`, `goto_type_definition`, `goto_implementation`, `goto_reference`, `hover`, and `code_action` in the review ask the language server of the row's file, at the same place in it.
+  Each file's diagnostics show on its rows, from its buffer, or from what its servers reported when it isn't open.
   `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.
@@ -115,7 +116,7 @@ The hooks run on commit.
   Removed and added rows get tints, headers a rule, and changed words a mark, from theme scopes: `diff.{plus,minus}.view`, `diff.delta.view.text`, and the fork's `ui.review.header` and `ui.review.gap`.
 - Upstream files:
   - `helix-view/src/editor.rs`: the `Editor::review` field, its default, and one condition in `Editor::switch` that keeps the stream when you switch away from it.
-  - `helix-view/src/gutter.rs`: the stream's branch at the top of `line_numbers` and `diff`.
+  - `helix-view/src/gutter.rs`: the stream's branch at the top of `line_numbers`, `diff`, and `diagnostic`.
   - `helix-view/src/lib.rs`: `pub mod review;`.
   - `helix-view/Cargo.toml`: `imara-diff`. Bump it together with helix-core's and helix-vcs's.
   - `helix-term/src/ui/editor.rs`: the `review_keys` field and its default, `review::sync` and the keymap swap at the top of `handle_event`, `review::sync` at the top of `render`, and the review's decoration and overlays in `render_view`.
@@ -130,7 +131,7 @@ The hooks run on commit.
   - `helix-term/src/ui/picker.rs`: the `on_review_jump` hook, its builder, and its key arm, next to `changed-files-views`' `on_cycle_changes`.
   - Fork files of other features: `helix-view/src/editor/picker_keys.rs` (`picker-keys`) gets `ReviewJump` and its `Alt-r` default, and `helix-term/src/commands/changed_file.rs` (`changed-files-views`) sets the hook.
   - `book/src/keymap.md` (Review), `book/src/themes.md` (the review's scopes), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
-- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,forward,gutter,lend,log,sync,syntax,words}.rs`, `helix-term/src/commands/review.rs` and `review/{lsp,stage,restore}.rs`, `helix-term/src/commands/typed/review_write.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs`.
+- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,forward,gutter,diagnostics,lend,log,sync,syntax,words}.rs`, `helix-term/src/commands/review.rs` and `review/{lsp,stage,restore}.rs`, `helix-term/src/commands/typed/review_write.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs`.
 - Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/forward.rs`, `review/syntax.rs`, `review/words.rs`, `helix-vcs/src/git/index.rs`, and `commands/review/stage.rs`. Integration tests in `fork_review.rs` over a temporary git repository.
 - Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
   #9951 and #16252 rewrite the diff-base code in `git.rs` and `lib.rs`. Both open.

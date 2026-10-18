@@ -838,6 +838,120 @@ async fn a_staged_review_refuses_undo_and_lsp_keys() -> anyhow::Result<()> {
     .await
 }
 
+/// A diagnostic as a server reports it: its first line and column, its last
+/// line and column, and its message.
+type Reported<'a> = ((u32, u32), (u32, u32), &'a str);
+
+/// Sets `path`'s report as a server would publish it: in the editor's map, and
+/// on the file's buffer when it's open.
+fn publish(app: &mut Application, path: &Path, report: &[Reported]) {
+    use helix_core::diagnostic::{DiagnosticProvider, LanguageServerId};
+    use helix_lsp::{lsp, OffsetEncoding};
+
+    let provider = DiagnosticProvider::Lsp {
+        server_id: LanguageServerId::default(),
+        identifier: None,
+    };
+    let report: Vec<_> = report
+        .iter()
+        .map(
+            |&((line, column), (end_line, end_column), message)| lsp::Diagnostic {
+                range: lsp::Range::new(
+                    lsp::Position::new(line, column),
+                    lsp::Position::new(end_line, end_column),
+                ),
+                severity: Some(lsp::DiagnosticSeverity::ERROR),
+                message: message.to_string(),
+                ..Default::default()
+            },
+        )
+        .collect();
+    if let Some(doc) = app.editor.document_by_path_mut(path) {
+        let diagnostics: Vec<_> = report
+            .iter()
+            .filter_map(|diagnostic| {
+                helix_view::Document::lsp_diagnostic_to_diagnostic(
+                    doc.text(),
+                    None,
+                    diagnostic,
+                    provider.clone(),
+                    OffsetEncoding::Utf16,
+                )
+            })
+            .collect();
+        doc.replace_diagnostics(diagnostics, &[], Some(&provider));
+    }
+    let uri = helix_core::Uri::from(path);
+    match report.is_empty() {
+        true => app.editor.diagnostics.remove(&uri),
+        false => app.editor.diagnostics.insert(
+            uri,
+            report
+                .into_iter()
+                .map(|diagnostic| (diagnostic, provider.clone()))
+                .collect(),
+        ),
+    };
+}
+
+/// Each of the review's diagnostics, and the text it covers.
+fn placed(app: &Application) -> Vec<(String, String)> {
+    let doc = app.editor.document(stream(app).doc).unwrap();
+    doc.diagnostics()
+        .iter()
+        .map(|diagnostic| {
+            let range = diagnostic.range.start..diagnostic.range.end;
+            (
+                diagnostic.message.clone(),
+                doc.text().slice(range).to_string(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn files_diagnostics_land_on_their_rows_open_or_not() -> anyhow::Result<()> {
+    let repo = repo(
+        &[("a.txt", TEN), ("b.txt", "b\n")],
+        &[
+            ("a.txt", Some("1\n2\n3\n4\n5\n6\nseven\n8\n9\n10\n")),
+            ("b.txt", Some("B\n")),
+        ],
+    );
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+    let both = vec![
+        ("seven".to_string(), "even\n8".to_string()),
+        ("bee".to_string(), "B".to_string()),
+    ];
+
+    publish(
+        &mut app,
+        &a,
+        &[((1, 0), (1, 1), "hidden"), ((6, 1), (7, 1), "seven")],
+    );
+    publish(&mut app, &b, &[((0, 0), (0, 1), "bee")]);
+    run_until(&mut app, "<esc>", |app| !placed(app).is_empty()).await?;
+    assert!(app.editor.document_by_path(&b).is_none());
+    assert_eq!(
+        placed(&app),
+        both,
+        "none on the hidden line, and one across two rows"
+    );
+
+    run_until(&mut app, "/^seven<ret><ret>IX<esc><C-o>", |app| {
+        in_stream(app) && stream_text(app).contains("Xseven")
+    })
+    .await?;
+    assert_eq!(placed(&app), both, "they follow an edit made in the file");
+
+    publish(&mut app, &b, &[]);
+    run_until(&mut app, "<esc>", |app| placed(app).len() == 1).await?;
+    assert_eq!(placed(&app), both[..1], "a report taken back");
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn lsp_keys_in_the_review_ask_from_the_rows_file() -> anyhow::Result<()> {
     let repo = three_hunks();
