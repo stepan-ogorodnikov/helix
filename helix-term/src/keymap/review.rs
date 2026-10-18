@@ -46,7 +46,7 @@ fn replace_commands(keys: &mut KeyTrie) {
         // so one step earlier is one undo.
         "undo" | "earlier" => Some(MappableCommand::review_undo),
         "redo" | "later" => Some(MappableCommand::review_redo),
-        _ => None,
+        _ => crate::commands::review::lent(command),
     };
     match keys {
         KeyTrie::MappableCommand(command) => {

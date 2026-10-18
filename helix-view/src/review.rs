@@ -25,12 +25,14 @@ use reconcile::Key;
 mod forward;
 pub(crate) mod gutter;
 pub mod layout;
+mod lend;
 mod log;
 mod reconcile;
 mod sync;
 mod syntax;
 mod words;
 
+pub use lend::lend;
 pub use log::{log_step, redo, undo};
 pub use sync::{load, sync};
 pub use syntax::overlays as syntax_overlays;

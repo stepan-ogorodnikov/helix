@@ -480,6 +480,7 @@ What `:w` in the review changes as it saves, a format or a final line ending, is
 A new line takes the file's line ending, and `Tab` and `>` the file's indent. An edit to a file's last line gives it a line ending if it had none.
 An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is one that would join a line to such a row. A staged review takes no edits.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
+The language server keys above work on added and unchanged lines. They open the row's file in the background, which closes with the review, and the first key can find its server still starting.
 With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review swaps these commands for its own, on whatever keys they're bound to:
 
@@ -493,6 +494,9 @@ The review swaps these commands for its own, on whatever keys they're bound to:
 | `U`  | `redo`              | `review_redo`: redo the review's last undone edit |
 | `Alt-u` | `earlier`        | `review_undo`                              |
 | `Alt-U` | `later`          | `review_redo`                              |
+| `gd`, `gD`, `gy`, `gi`, `gr` | `goto_definition` and the other gotos | Ask the language server of the row's file, at the same place in it |
+| `Space k` | `hover`        | Ask the language server of the row's file  |
+| `Space a` | `code_action`  | Ask the language server of the row's file, about the selection |
 
 And it adds these keys:
 

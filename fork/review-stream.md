@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9 planned 2026-10-18, as 9a–9c, with completion a later spike, 9d (6.19). Phases 1–8 are complete, and the human checks 7–8 by hand. Phase 9 waits for approval.
+Status: phase 9a done 2026-10-18. Phases 1–8 are complete, and so is 9a, goto and hover from the stream. Diagnostics, 9b, are next, then rename, 9c. Completion is a later spike, 9d (6.19).
 
 ## Bottom line
 
@@ -409,7 +409,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 8a. Undo | Done | `u` and `U` in the review undo and redo its edits and restores in their files, by the review's own log | 200–300. Actual: about 290, plus 180 of tests. | Medium: histories across files, the cursor after |
 | 8b. Save | Done | `:w` in the review writes the files it shows with unsaved changes, and logs the save's own edits | 120–200. Actual: about 185, of it 60 copied, plus 125 of tests. | Low: a copied chain, and one wrapped callback |
 | **LSP** | | | **0.4–0.65k** | |
-| 9a. Goto and hover | Planned | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250 | Medium: the lend has to leave no trace |
+| 9a. Goto and hover | Done | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250. Actual: about 150, plus 120 of tests. | Medium: the lend has to leave no trace |
 | 9b. Diagnostics | Planned | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250 | Low |
 | 9c. Rename | Planned | Rename from the stream, through its own prompt | 80–150 | Low |
 | 9d. Completion | Spike, later | Completion and signature help from the file's servers | Unknown | **High**: seams inside upstream functions |
@@ -678,6 +678,17 @@ Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built ye
 - Language servers start when `Editor::open` opens a buffer, and `language_servers_with_feature` lists only initialized ones. That's why the first lent key can find none.
 - Completion: `request_completions` reads `current_ref!` and takes its savepoint there. `ui/completion.rs` converts item ranges against the focused buffer's text.
 - No `handlers.rs` seam after all. The plan's `DiagnosticsDidChange` hook would miss reports for files that aren't open.
+
+### 6.20 Phase 9a: found
+
+- The lend is two parts. `helix-view/src/review/lend.rs` maps the stream's primary selection into the file and loads its buffer. `commands/review/lsp.rs` points the view at the buffer, runs upstream's command, and points it back.
+- The keymap reaches the lending commands through `commands::review`, which is now `pub(crate)`. That changes only the fork's own `mod` line in `commands.rs`.
+- The selection carries over whole when both its ends are on one file's rows, so a code action asks about the range. Otherwise it's the cursor alone, which is all goto and hover read.
+- A file that loads with text other than what the review read is refused, as an edit is (3.9), and the review then follows its buffer.
+- Setting the file's selection for the stream's view fires `SelectionDidChange`. Its handlers, document highlights, code action hints, and signature help, work by buffer and view id and don't assume the view shows the buffer.
+- The tests have no language server. They check the file is loaded, the selection lands at its place in the file, the view shows the stream again, and the refusals.
+  Each lent command then gives upstream's answer for no server, which shows it ran. Whether a server's answer comes back right is for the manual check.
+- A server that's still starting can't be tested without one. The check reads the buffer's servers, crate-private to `helix-view`, where `lend.rs` lives.
 
 ## 7. Risks
 

@@ -797,7 +797,7 @@ async fn u_in_the_review_undoes_a_restore_in_every_file() -> anyhow::Result<()> 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_staged_review_undoes_nothing() -> anyhow::Result<()> {
+async fn a_staged_review_refuses_undo_and_lsp_keys() -> anyhow::Result<()> {
     let repo = seventh_changed();
     let file = repo.path().join("a.txt");
     let mut app = app_on(file.clone())?;
@@ -807,19 +807,145 @@ async fn a_staged_review_undoes_nothing() -> anyhow::Result<()> {
     })
     .await?;
 
-    test_key_sequence(
+    test_key_sequences(
         &mut app,
-        Some("u"),
-        Some(&|app| {
-            assert_eq!(
-                status(app),
-                "A staged review is read-only. ret opens the file."
-            );
-            assert_eq!(
-                buffer_text(app, &file).as_deref(),
-                Some("1\n2\n3\n4\n5\n6\nxseven\n8\n9\n10\n")
-            );
-        }),
+        vec![
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        "A staged review is read-only. ret opens the file."
+                    );
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("1\n2\n3\n4\n5\n6\nxseven\n8\n9\n10\n")
+                    );
+                }),
+            ),
+            (
+                Some("gd"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        "A staged review shows the index, not the files. ret opens the file."
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lsp_keys_in_the_review_ask_from_the_rows_file() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+    let review = stream_text(&app);
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("/ine$<ret><space>a"),
+                Some(&|app| {
+                    assert!(in_stream(app), "the view shows the review again");
+                    assert_eq!(selected(app), "ine");
+                    let view = view!(app.editor).id;
+                    let file = app.editor.document_by_path(&a).unwrap();
+                    assert_eq!(
+                        file.selection(view).primary(),
+                        helix_core::Range::new(19, 22),
+                        "the selection, at its place in the file"
+                    );
+                    assert_eq!(
+                        status(app),
+                        "No configured language server supports code actions"
+                    );
+                }),
+            ),
+            (
+                Some("/^B$<ret>gd"),
+                Some(&|app| {
+                    assert!(in_stream(app));
+                    let file = app.editor.document_by_path(&b).expect("loaded to ask from");
+                    assert!(
+                        app.editor
+                            .tree
+                            .views()
+                            .all(|(view, _)| view.doc != file.id()),
+                        "in the background"
+                    );
+                    assert_eq!(status(app), "No definition found.");
+                    assert_eq!(stream_text(app), review);
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lsp_keys_in_the_review_need_a_line_the_file_has() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let b = repo.path().join("b.txt");
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+    std::fs::write(&b, "Bee\n")?;
+    let changed = format!(
+        "{} changed on disk, so the review reads it again",
+        shown(b.clone())
+    );
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("ggjgd"),
+                Some(&|app| {
+                    assert_eq!(cursor(app), (1, 0), "on a line in both sides");
+                    assert_eq!(
+                        status(app),
+                        "No definition found.",
+                        "a context row is a line of its file"
+                    );
+                }),
+            ),
+            (
+                Some("gggd"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        "The cursor isn't on an added or unchanged line"
+                    );
+                }),
+            ),
+            (
+                Some("/^b$<ret>gd"),
+                Some(&|app| {
+                    assert_eq!(selected(app), "b", "a removed row");
+                    assert_eq!(
+                        status(app),
+                        "The cursor isn't on an added or unchanged line"
+                    );
+                    assert!(app.editor.document_by_path(&b).is_none());
+                }),
+            ),
+            (
+                Some("j<space>k"),
+                Some(&|app| {
+                    assert_eq!(status(app), changed);
+                    assert!(
+                        stream_text(app).ends_with("b\nBee\n"),
+                        "the review follows the file's buffer"
+                    );
+                }),
+            ),
+        ],
         false,
     )
     .await

@@ -18,9 +18,11 @@ use helix_view::editor::Action;
 use helix_view::review::{self, Content, Row, Section, Stream};
 use helix_view::{align_view, current, current_ref, doc, view, Align, Editor};
 
+mod lsp;
 mod restore;
 mod stage;
 
+pub(crate) use lsp::lent;
 pub(super) use restore::review_restore;
 pub(super) use stage::{stage_hunk, unstage_hunk};
 

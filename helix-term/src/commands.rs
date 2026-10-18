@@ -1,7 +1,7 @@
 mod changed_file;
 pub(crate) mod dap;
 pub(crate) mod lsp;
-mod review; // FORK: review-stream
+pub(crate) mod review; // FORK: review-stream
 pub(crate) mod syntax;
 pub(crate) mod typed;
 
