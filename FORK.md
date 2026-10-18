@@ -98,13 +98,14 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, and code actions from it, and its files' diagnostics, phases 9a–9b, are done. Rename, 9c, is planned, with completion a later spike, 9d.
+- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, code actions, and rename from it, and its files' diagnostics, phases 9a–9c, are done. Completion is a later spike, 9d.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit to added or unchanged lines, new and deleted lines too, goes to the file's buffer as you type, loaded in the background if need be and closed with the review once saved, and the rows follow it. New lines and indents are the file's own. Any other edit is put back, and a staged review takes none.
   `u` and `U` in the review (`review_undo` and `review_redo`, swapped in for `undo`, `redo`, `earlier`, and `later`) undo and redo its edits and restores in every file they changed, and stop at a file that changed since in another way.
   `:w` in the review writes every file it shows with unsaved changes, through upstream's save chain, and `u` then undoes what the save changed first.
   `goto_definition`, `goto_declaration`, `goto_type_definition`, `goto_implementation`, `goto_reference`, `hover`, and `code_action` in the review ask the language server of the row's file, at the same place in it.
+  `rename_symbol` in the review opens the review's own prompt, and the rename is a step of the review's undo log.
   Each file's diagnostics show on its rows, from its buffer, or from what its servers reported when it isn't open.
   `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
@@ -123,6 +124,7 @@ The hooks run on commit.
   - `helix-term/src/ui/text_decorations.rs`: `pub mod review;`.
   - `helix-term/src/commands.rs`: `pub(crate) mod review;`, the `review_*` rows, and their wrappers.
   - `helix-term/src/commands/lsp.rs`: no seam, but the review runs `goto_*`, `hover`, and `code_action` with the view lent to the row's file. A rebase that makes their answers read the focused buffer breaks that.
+    The review's rename in `commands/review/lsp.rs` follows `rename_symbol`'s request and edit, without `prepareRename`. A rebase that changes them updates it.
   - `helix-term/src/commands/typed.rs`: the `:review`, `:review-refresh`, `:review-restore`, `:review-context`, `:stage-hunk`, and `:unstage-hunk` rows, `mod review_write;`, and the seam at the top of `write_impl` that sends `:w` in the review to `typed/review_write.rs`.
     That module copies `write_all_impl`'s save chain. A rebase that changes the chain updates the copy.
   - `helix-term/src/keymap.rs`: `pub mod review;`.

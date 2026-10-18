@@ -498,6 +498,7 @@ The review swaps these commands for its own, on whatever keys they're bound to:
 | `gd`, `gD`, `gy`, `gi`, `gr` | `goto_definition` and the other gotos | Ask the language server of the row's file, at the same place in it |
 | `Space k` | `hover`        | Ask the language server of the row's file  |
 | `Space a` | `code_action`  | Ask the language server of the row's file, about the selection |
+| `Space r` | `rename_symbol` | Rename in the row's file, through the review's own prompt. `u` in the review undoes it |
 
 And it adds these keys:
 

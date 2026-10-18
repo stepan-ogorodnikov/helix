@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9b done 2026-10-18. Phases 1–8 are complete, and so are 9a–9b, goto and hover from the stream and its files' diagnostics. Rename, 9c, is next. Completion is a later spike, 9d (6.19).
+Status: phase 9c done 2026-10-18. Phases 1–9c are complete. The human checks phases 7–9 by hand next. Completion, 9d, is a spike for after that (6.19).
 
 ## Bottom line
 
@@ -411,7 +411,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | **LSP** | | | **0.4–0.65k** | |
 | 9a. Goto and hover | Done | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250. Actual: about 150, plus 120 of tests. | Medium: the lend has to leave no trace |
 | 9b. Diagnostics | Done | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250. Actual: about 190, plus 105 of tests. | Low |
-| 9c. Rename | Planned | Rename from the stream, through its own prompt | 80–150 | Low |
+| 9c. Rename | Done | Rename from the stream, through its own prompt | 80–150. Actual: about 95, plus 10 of tests. | Low |
 | 9d. Completion | Spike, later | Completion and signature help from the file's servers | Unknown | **High**: seams inside upstream functions |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
@@ -701,6 +701,15 @@ Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built ye
 - A report outlives the server that sent it, so one with no server left is read in UTF-16, the protocol's default. That's also what lets the test publish a report with no server.
 - The gutter's dot is a copy of upstream's without the filter by the buffer's own servers, in `review/gutter.rs`. Tests can't see it. It's for the manual check.
 - A staged review shows no diagnostics: its rows are the index, and the servers report on the file.
+
+### 6.22 Phase 9c: found
+
+- The rename borrows 9a's `review::lend` to load the file and put the selection at its place, then opens its own prompt.
+  It takes the server and the position when the prompt opens. On confirm it checks the file's version, so an edit while the prompt was open refuses the rename.
+- The rename is a step of the review's undo log, as a `:review-restore` is. `apply_workspace_edit` commits one revision per file, so the step is every buffer whose revision moved, and every buffer the edit opened, from revision 0.
+  The plan didn't ask for that. Without it, `u` in the review would stop at the first file the rename touched.
+- A code action's edit isn't a step. It lands from upstream's menu, after the key, where the review can't see it. `u` in the review stops at its files, as at any edit made elsewhere.
+- Tests have no language server. The one test shows the swap is in place: on a removed row, `Space r` gives the review's refusal, which upstream's rename doesn't have. The prompt and the rename itself are for the manual check.
 
 ## 7. Risks
 

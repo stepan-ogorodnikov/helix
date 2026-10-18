@@ -1050,6 +1050,16 @@ async fn lsp_keys_in_the_review_need_a_line_the_file_has() -> anyhow::Result<()>
                 }),
             ),
             (
+                Some("<space>r"),
+                Some(&|app| {
+                    assert_eq!(
+                        status(app),
+                        "The cursor isn't on an added or unchanged line",
+                        "rename too"
+                    );
+                }),
+            ),
+            (
                 Some("j<space>k"),
                 Some(&|app| {
                     assert_eq!(status(app), changed);
