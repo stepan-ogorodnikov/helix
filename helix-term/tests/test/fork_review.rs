@@ -1387,7 +1387,7 @@ async fn ret_on_a_gap_shows_its_lines_and_they_stay_shown() -> anyhow::Result<()
         &mut app,
         vec![
             (
-                Some("j<ret>"),
+                Some("/unchanged<ret><ret>"),
                 Some(&|app| {
                     assert!(in_stream(app));
                     assert_eq!(stream_text(app), opened("seven"));
@@ -1395,6 +1395,14 @@ async fn ret_on_a_gap_shows_its_lines_and_they_stay_shown() -> anyhow::Result<()
                         cursor(app),
                         (1, 0),
                         "the cursor lands on the first line shown"
+                    );
+                    let (view, doc) = current_ref!(app.editor);
+                    assert_eq!(
+                        doc.selection(view.id)
+                            .primary()
+                            .line_range(doc.text().slice(..)),
+                        (1, 1),
+                        "the search's selection doesn't stretch over the lines shown"
                     );
                 }),
             ),

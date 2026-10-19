@@ -465,6 +465,7 @@ If phase 7's relayout feels wrong in use, phase 7 is the place to stop, before u
   Git's merging of nearby hunks falls out of that. Opened ranges are source lines, mapped through edits like the keys.
 - Reconcile runs over the whole stream, with files matched by path. `:review-refresh` uses the same path, and a file that appears or vanishes inserts or deletes its rows.
 - Helix maps a cursor on a replaced row to the start of what replaced it. A gap's cursor lands on its first shown line with no extra code.
+  A selection on the gap row maps over every line it shows, though, so opening a gap now leaves a cursor on the first one (8, 2026-10-19).
 - A kept row whose text changed has only the text before its line ending replaced, so the cursor stays on the row. It lands at the end of the new text. The column isn't kept.
 - A new scratch buffer holds one line ending. The reconcile's last change runs to the end of the text to drop it.
 - Run from the stream, `:review-refresh` listed the working directory's changes, since the stream has no path. The stream keeps the directory its changes were listed from.
@@ -751,7 +752,6 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 
 From the manual check (6.23), each a yes or no:
 
-- Where the cursor goes after `Enter` opens a gap. It lands on the last line shown.
 - The picker's `all` list puts staged-only files last. The review sorts by path.
 
 Decided, 2026-10-19:
@@ -761,6 +761,7 @@ Decided, 2026-10-19:
   The rule reads the edit, not the cursor, so deleting a removed row's own line ending, the same edit, says join too.
 - **A line whose every word changed gets no changed-word marks**, on either side. Its row's tint already says it's new, and the marks painted the whole row. A hunk that only adds or removes lines already had none.
 - **The rule after a header takes only `ui.window`'s color**: its foreground, or its background when it has no foreground. 57 of the 135 bundled themes that set `ui.window` give it a background, which banded the header row.
+- **Opening a gap leaves a cursor at the start of its first shown line.** The report saw the last line: the cursor was already on the first, but a selection on the gap row, as `/unchanged` leaves, stretched over every line shown, and a following `d` would delete them all.
 
 Decided, 2026-10-18:
 

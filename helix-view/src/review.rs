@@ -635,6 +635,18 @@ pub fn open_gap(editor: &mut Editor, row: usize) -> bool {
     };
     let files = stream.files.clone();
     update(editor, files, Some((file, start..end)));
+    // WHY: a selection on the gap row, as a search leaves, maps over every
+    // line it shows, so a following `d` would delete them all.
+    let first = editor.review.stream.as_ref().and_then(|stream| {
+        stream.rows.iter().position(|row| {
+            matches!(*row, Row::Context { file: f, source, .. } if f == file && source == start)
+        })
+    });
+    if let Some(first) = first {
+        let (view, doc) = current!(editor);
+        let pos = doc.text().line_to_char(first);
+        doc.set_selection(view.id, Selection::point(pos));
+    }
     true
 }
 
