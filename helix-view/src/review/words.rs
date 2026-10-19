@@ -41,12 +41,16 @@ pub fn changed_words(
     let mut diff = Diff::compute(Algorithm::Myers, &input);
     diff.postprocess_no_heuristic(&input);
 
-    let mut words = ChangedWords::default();
+    let mut base_changed = vec![false; base_tokens.len()];
+    let mut doc_changed = vec![false; doc_tokens.len()];
     for hunk in diff.hunks() {
         let range = |range: Range<u32>| range.start as usize..range.end as usize;
-        base.push_changed(&base_tokens[range(hunk.before)], &mut words.base);
-        doc.push_changed(&doc_tokens[range(hunk.after)], &mut words.doc);
+        base_changed[range(hunk.before)].fill(true);
+        doc_changed[range(hunk.after)].fill(true);
     }
+    let mut words = ChangedWords::default();
+    base.push_changed(&base_tokens, &base_changed, &mut words.base);
+    doc.push_changed(&doc_tokens, &doc_changed, &mut words.doc);
     Some(words)
 }
 
@@ -70,13 +74,22 @@ impl Side {
         })
     }
 
-    /// Pushes the changed `tokens`, split at line ends and trimmed of whitespace.
-    fn push_changed(&self, tokens: &[Token], out: &mut Vec<Range<usize>>) {
-        for line in tokens.split(|token| token.kind == Kind::Newline) {
-            let mut words = line.iter().filter(|token| token.kind != Kind::Space);
-            if let Some(first) = words.next() {
-                let last = words.next_back().unwrap_or(first);
-                out.push(self.start + first.start..self.start + last.end);
+    /// Pushes each run of `changed` tokens within a line, trimmed of whitespace.
+    fn push_changed(&self, tokens: &[Token], changed: &[bool], out: &mut Vec<Range<usize>>) {
+        let tokens: Vec<(&Token, bool)> = tokens.iter().zip(changed.iter().copied()).collect();
+        for line in tokens.split(|(token, _)| token.kind == Kind::Newline) {
+            // WHY: a line whose every word changed is new as a whole, which
+            // its row's tint already says. Marks would paint the whole row.
+            let mut words = line.iter().filter(|(token, _)| token.kind != Kind::Space);
+            if words.all(|&(_, changed)| changed) {
+                continue;
+            }
+            for run in line.split(|&(_, changed)| !changed) {
+                let mut words = run.iter().filter(|(token, _)| token.kind != Kind::Space);
+                if let Some((first, _)) = words.next() {
+                    let last = words.next_back().map_or(first, |(last, _)| last);
+                    out.push(self.start + first.start..self.start + last.end);
+                }
             }
         }
     }
@@ -180,6 +193,17 @@ mod tests {
         let (base, doc) = words("a b\nc d\n", "a x\n  y d\n").unwrap();
         assert_eq!(base, ["b", "c"], "each line gets its own range");
         assert_eq!(doc, ["x", "y"], "without the indent");
+    }
+
+    #[test]
+    fn a_line_with_every_word_changed_gets_no_marks() {
+        let (base, doc) = words(
+            "    call(1);\n",
+            "    if ready {\n        call(2);\n    }\n",
+        )
+        .unwrap();
+        assert_eq!(base, ["1"]);
+        assert_eq!(doc, ["2"], "only the line that is partly the same");
     }
 
     #[test]

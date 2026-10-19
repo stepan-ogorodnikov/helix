@@ -751,7 +751,6 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 
 From the manual check (6.23), each a yes or no:
 
-- Added lines with no removed counterpart, in a hunk that also removes, get the changed-word tint across the row. A hunk that only adds gets the plain tint.
 - The rule after a header takes `ui.window`'s background too, so it's darker than the row.
 - Where the cursor goes after `Enter` opens a gap. It lands on the last line shown.
 - The picker's `all` list puts staged-only files last. The review sorts by path.
@@ -761,6 +760,7 @@ Decided, 2026-10-19:
 - **`:review` back to an open review says its scope**, `Reviewing <scope> changes`, as a read does (6.7). Nothing else on screen names the scope.
 - **A refusal's message is the one for the row the edit starts from.** Typing at column 1 of a header, a gap, or a removed row says it can't be edited, though the text would have joined the run above. `Backspace` at column 1 of an editable row says it would join, though it deletes the line ending of the row above.
   The rule reads the edit, not the cursor, so deleting a removed row's own line ending, the same edit, says join too.
+- **A line whose every word changed gets no changed-word marks**, on either side. Its row's tint already says it's new, and the marks painted the whole row. A hunk that only adds or removes lines already had none.
 
 Decided, 2026-10-18:
 
