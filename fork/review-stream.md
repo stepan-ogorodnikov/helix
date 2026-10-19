@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9c done 2026-10-18. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23). Two message rulings are open (8). Completion, 9d, is a spike for after that (6.19).
+Status: phase 9c done 2026-10-18. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23). The rulings it raised are made (8). Completion, 9d, is a spike for after that (6.19).
 
 ## Bottom line
 
@@ -750,9 +750,7 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 
 ## 8. Open decisions
 
-From the manual check (6.23), each a yes or no:
-
-- The picker's `all` list puts staged-only files last. The review sorts by path.
+None.
 
 Decided, 2026-10-19:
 
@@ -761,6 +759,7 @@ Decided, 2026-10-19:
   The rule reads the edit, not the cursor, so deleting a removed row's own line ending, the same edit, says join too.
 - **A line whose every word changed gets no changed-word marks**, on either side. Its row's tint already says it's new, and the marks painted the whole row. A hunk that only adds or removes lines already had none.
 - **The rule after a header takes only `ui.window`'s color**: its foreground, or its background when it has no foreground. 57 of the 135 bundled themes that set `ui.window` give it a background, which banded the header row.
+- **The changed-file lists come out of `visible_changes` in path order**, so the picker's `all` list matches the review's, which no longer sorts on its own. When the status walk ends on the `all` list, the picker rebuilds it, since the live list kept each path's first entry. That's in `changed-files-views`.
 - **Opening a gap leaves a cursor at the start of its first shown line.** The report saw the last line: the cursor was already on the first, but a selection on the gap row, as `/unchanged` leaves, stretched over every line shown, and a following `d` would delete them all.
 
 Decided, 2026-10-18:

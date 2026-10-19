@@ -173,8 +173,7 @@ fn read_changes(
                 }
             }
         }
-        let mut changes = visible_changes(scope, &unstaged, &staged);
-        changes.sort_by(|a, b| a.path().cmp(b.path()));
+        let changes = visible_changes(scope, &unstaged, &staged);
         let files = tokio::task::spawn_blocking(move || {
             changes
                 .into_iter()
