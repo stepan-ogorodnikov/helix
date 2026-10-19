@@ -115,6 +115,9 @@ enum DiffProvider {
     None,
 }
 
+// WHY: without `git`, the only arm bails, so the arguments go unused. helix-view
+// builds this crate without it, and its clippy run fails on those warnings.
+#[cfg_attr(not(feature = "git"), allow(unused_variables))]
 impl DiffProvider {
     fn get_diff_base(&self, file: &Path, trust_full: bool) -> Result<Vec<u8>> {
         match self {
