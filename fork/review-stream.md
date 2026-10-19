@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9c done 2026-10-18. Phases 1–9c are complete. The human checks phases 7–9 by hand next. Completion, 9d, is a spike for after that (6.19).
+Status: phase 9c done 2026-10-18. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23). Two message rulings are open (8). Completion, 9d, is a spike for after that (6.19).
 
 ## Bottom line
 
@@ -713,6 +713,22 @@ Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built ye
 - A code action's edit isn't a step. It lands from upstream's menu, after the key, where the review can't see it. `u` in the review stops at its files, as at any edit made elsewhere.
 - Tests have no language server. The one test shows the swap is in place: on a removed row, `Space r` gives the review's refusal, which upstream's rename doesn't have. The prompt and the rename itself are for the manual check.
 
+### 6.23 The manual check: found
+
+Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checkout, with one scenario per file kind and scope.
+
+- A scripted first pass found seven mismatches. After the fixes, the integration harness replayed every step it can see, 173 checks, language servers included. The human checked what only the screen shows: the gutter, colors, the picker, popups, and the untrusted refusal. Both passed.
+- Fixed:
+  - `all` listed a file renamed with `git mv`, then edited, as modified, with every line added. `visible_changes` kept the unstaged entry. An unstaged modification now keeps the staged entry, which says what the file is against `HEAD`. In `changed-files-views`, since the picker had it too.
+  - `:stage-hunk` on a conflicted file said only its path. Staging wrapped the reason in a context, and a typable command shows only the outermost message.
+  - A saved file the review loaded stayed open after the review closed, when it was the only other buffer. Helix gives the closed review's view to another buffer before the sync runs, so a view showing a file then said nothing about the user (6.15).
+- Upstream behavior, left as it is:
+  - Helix clears the status line when a language server's progress report ends, so `Restored 1 change` can vanish when the restore starts rust-analyzer.
+  - Any key clears the status line, so a refused edit's message shows only until the next key.
+  - Right after `]d`, `[d` selects the same diagnostic backward. The cursor is at its end.
+- The review's rename fills in a selection longer than one character, as upstream does when it has no `prepareRename` answer. After a search, `;` first gives the word under the cursor.
+- The harness can drive the review end to end, rust-analyzer included, with the working directory set to a fixture repo and one `Application` per test, run one at a time. A second `Application` in one test registers its hooks twice. The changed-files picker can't run there: its matcher thread panics outside the test's runtime.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -733,7 +749,15 @@ Planned 2026-10-18, from a read of upstream's LSP code. Nothing here is built ye
 
 ## 8. Open decisions
 
-None.
+From the manual check (6.23):
+
+- **`:review` back to an open review of the same scope sets no status.** Each read names its scope (6.7), and a switch isn't a read. But nothing else on screen names the scope. Recommended: say `Reviewing <scope> changes` on a switch too.
+- **Two refusals give each other's message.** Typing at column 1 of a header is refused as a join, since that column ends the run above. Backspace at column 1 of an added row under a removed row is refused as an edit to the removed line. Each is true of the text, not of what the cursor is on. Recommended: pick the message by the cursor's row.
+- Smaller, each a yes or no:
+  - Added lines with no removed counterpart, in a hunk that also removes, get the changed-word tint across the row. A hunk that only adds gets the plain tint.
+  - The rule after a header takes `ui.window`'s background too, so it's darker than the row.
+  - Where the cursor goes after `Enter` opens a gap. It lands on the last line shown.
+  - The picker's `all` list puts staged-only files last. The review sorts by path.
 
 Decided, 2026-10-18:
 
