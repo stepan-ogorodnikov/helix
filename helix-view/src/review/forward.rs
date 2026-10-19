@@ -12,13 +12,16 @@ use helix_core::{Assoc, Change, ChangeSet, Rope, Transaction};
 
 use super::{Content, Row, Stream};
 
-/// Why an edit of the stream is put back.
+/// Why an edit of the stream is put back. The message is the one for the row
+/// the edit starts from, which is where the cursor is.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Refusal {
-    /// It touches a header, a gap, or a removed row.
+    /// It touches a header, a gap, or a removed row, or types at the start of
+    /// one.
     NotEditable,
     /// It leaves a run without the line ending that ends it, so its last line
-    /// would join the row below.
+    /// would join the row below, or deletes the line ending above it, so its
+    /// first line would join the row above.
     Join,
 }
 
@@ -124,8 +127,21 @@ pub(super) fn forward(stream: &Stream, changes: &ChangeSet) -> Result<Forward, R
             .get(run)
             .is_some_and(|run| run.chars.start <= from && to <= run.chars.end);
         let ordered = owned.last().is_none_or(|(_, (_, last, _))| *last <= from);
-        if !inside || !ordered {
+        if !ordered {
             return Err(Refusal::NotEditable);
+        }
+        if !inside {
+            // WHY: deleting just the line ending above a run is `Backspace` at
+            // the start of its first row, which is editable.
+            let joins_above = runs.get(run).is_some_and(|run| {
+                let above = get_line_ending(&text.line(run.rows.start - 1));
+                to == run.chars.start && above.is_some_and(|ending| from + ending.len_chars() == to)
+            });
+            return Err(if joins_above {
+                Refusal::Join
+            } else {
+                Refusal::NotEditable
+            });
         }
         owned.push((run, (from, to, insert)));
     }
@@ -157,7 +173,17 @@ pub(super) fn forward(stream: &Stream, changes: &ChangeSet) -> Result<Forward, R
         let span = &spans[index];
         let ends_line = |pos: usize| LineEnding::from_char(after.char(pos)).is_some();
         if !span.is_empty() && !ends_line(span.end - 1) {
-            return Err(Refusal::Join);
+            // WHY: an insert where a run ends is at the start of the row
+            // below it, which isn't editable.
+            let below = run.rows.end < stream.rows.len()
+                && changes.iter().any(|(from, to, insert)| {
+                    from == to && *from == run.chars.end && insert.is_some()
+                });
+            return Err(if below {
+                Refusal::NotEditable
+            } else {
+                Refusal::Join
+            });
         }
         let changes = file_changes(stream, run, &changes);
         match edits.last_mut() {
@@ -404,9 +430,11 @@ mod tests {
             ("typing in a header", (0, 0), (0, 0), "x", Refusal::NotEditable),
             ("deleting a removed row's text", (2, 0), (2, END), "", Refusal::NotEditable),
             ("deleting from an added row into the removed row above", (2, 1), (3, 1), "", Refusal::NotEditable),
-            ("deleting the line ending above a run", (2, END), (3, 0), "", Refusal::NotEditable),
+            ("typing at the start of a removed row below a run", (2, 0), (2, 0), "x", Refusal::NotEditable),
+            ("typing at the start of a header below a run", (5, 0), (5, 0), "x", Refusal::NotEditable),
+            ("backspace at the start of a run, onto the removed row above", (2, END), (3, 0), "", Refusal::Join),
+            ("backspace at the start of a run, onto the header above", (0, END), (1, 0), "", Refusal::Join),
             ("deleting the line ending that ends a run", (4, END), (5, 0), "", Refusal::Join),
-            ("typing where a run ends", (5, 0), (5, 0), "x", Refusal::Join),
             ("typing past the last row", (8, 0), (8, 0), "x", Refusal::Join),
         ];
         for (case, from, to, insert, refusal) in cases {
