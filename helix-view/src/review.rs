@@ -19,7 +19,7 @@ use helix_core::{Rope, RopeSlice, Selection};
 use helix_vcs::{ChangeView, FileChange, Hunk};
 
 use crate::editor::Action;
-use crate::{align_view, current, view, Align, DocumentId, Editor, ViewId};
+use crate::{align_view, Align, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
 mod diagnostics;
