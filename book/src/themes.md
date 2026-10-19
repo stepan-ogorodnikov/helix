@@ -343,7 +343,7 @@ These scopes are used for theming the editor interface:
 | `ui.picker.header`                | Header row area in pickers with multiple columns                                               |
 | `ui.picker.header.column`         | Column names in pickers with multiple columns                                                  |
 | `ui.picker.header.column.active`  | The column name in pickers with multiple columns where the cursor is entering into.            |
-| `ui.window`                       | Borderlines separating splits, and the rule after a file's header in the review                |
+| `ui.window`                       | Borderlines separating splits. Its color draws the rule after a file's header in the review    |
 | `ui.review.header`                | A file's header row in the [review](./keymap.md#review). Falls back to `markup.heading`         |
 | `ui.review.gap`                   | A row of unchanged lines left out of the review. Falls back to `comment`                       |
 | `ui.help`                         | Description box for commands                                                                   |

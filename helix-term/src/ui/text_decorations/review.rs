@@ -7,14 +7,14 @@
 //!   #15631. Removed text falls back to `diff.minus`.
 //! - `diff.delta.view.text` marks changed words. It has no fallback.
 //! - `ui.review.header` falls back to `markup.heading`, and `ui.review.gap` to
-//!   `comment`. The rule after a header uses `ui.window`.
+//!   `comment`. The rule after a header takes its color from `ui.window`.
 //!
 //! Syntax colors come first, from parses of each file's two sides, so these
 //! styles patch over them.
 
 use helix_core::syntax::{Highlight, OverlayHighlights};
 use helix_core::unicode::width::UnicodeWidthStr;
-use helix_view::graphics::Rect;
+use helix_view::graphics::{Rect, Style};
 use helix_view::review::{self, Row};
 use helix_view::{Document, Editor, Theme, View};
 
@@ -76,7 +76,7 @@ pub fn render<'a>(
     // themes, and a tint is a background.
     let added = theme.try_get_exact("diff.plus.view");
     let removed = theme.try_get_exact("diff.minus.view");
-    let rule = theme.get("ui.window");
+    let rule = rule_style(theme.get("ui.window"));
     decorations.add_decoration(move |renderer: &mut TextRenderer, pos: LinePos| {
         let viewport = renderer.viewport;
         let row = Rect::new(viewport.x, pos.visual_line, viewport.width, 1);
@@ -110,4 +110,42 @@ pub fn render<'a>(
             _ => {}
         }
     });
+}
+
+// WHY: only the split border's color. Many themes give `ui.window` a
+// background, which would band the header row. A theme that gives it only a
+// background draws its border in that color.
+fn rule_style(window: Style) -> Style {
+    match window.fg.or(window.bg) {
+        Some(color) => Style::default().fg(color),
+        None => Style::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use helix_view::graphics::{Color, Style};
+
+    use super::rule_style;
+
+    #[test]
+    fn the_rule_takes_the_border_color_without_its_background() {
+        let (fg, bg) = (Color::Red, Color::Blue);
+        let cases = [
+            (
+                "both",
+                Style::default().fg(fg).bg(bg),
+                Style::default().fg(fg),
+            ),
+            (
+                "background only",
+                Style::default().bg(bg),
+                Style::default().fg(bg),
+            ),
+            ("neither", Style::default(), Style::default()),
+        ];
+        for (case, window, rule) in cases {
+            assert_eq!(rule_style(window), rule, "{case}");
+        }
+    }
 }
