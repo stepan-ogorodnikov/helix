@@ -1412,7 +1412,10 @@ async fn ret_on_a_gap_shows_its_lines_and_they_stay_shown() -> anyhow::Result<()
 async fn review_switches_to_the_open_review() -> anyhow::Result<()> {
     let repo = seventh_changed();
     let mut app = app_on(repo.path().join("a.txt"))?;
-    start_review(&mut app).await?;
+    run_until(&mut app, ":review unstaged<ret>", |app| {
+        app.editor.review.stream().is_some()
+    })
+    .await?;
 
     test_key_sequence(
         &mut app,
@@ -1420,6 +1423,7 @@ async fn review_switches_to_the_open_review() -> anyhow::Result<()> {
         Some(&|app| {
             assert!(in_stream(app));
             assert_eq!(cursor(app), (3, 0));
+            assert_eq!(status(app), "Reviewing unstaged changes");
         }),
         false,
     )

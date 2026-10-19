@@ -482,7 +482,7 @@ An edit to a removed line, a header, or a row of unchanged lines left out is put
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
 Each file's diagnostics show on its rows, from its buffer when it's open, or else from what its language servers reported for it. Inline diagnostics, the gutter's dot, and `]d` work as in a file.
 The language server keys above work on added and unchanged lines. They open the row's file in the background, which closes with the review, and the first key can find its server still starting.
-With a review open, `:review` switches to it. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
+With a review open, `:review` switches to it, and the status line says which changes it shows. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review swaps these commands for its own, on whatever keys they're bound to:
 
 | Key  | Command             | In the review                              |

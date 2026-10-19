@@ -54,7 +54,9 @@ pub(super) fn review(
     let open = open_stream(cx.editor).map(|stream| (stream.doc, stream.scope));
     match (open, scope) {
         (Some((doc, open)), scope) if scope.is_none_or(|scope| scope == open) => {
-            cx.editor.switch(doc, Action::Replace)
+            cx.editor.switch(doc, Action::Replace);
+            cx.editor
+                .set_status(format!("Reviewing {} changes", open.label()));
         }
         (_, scope) => read_changes(cx, scope.unwrap_or(ChangeView::All), None, None),
     }

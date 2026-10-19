@@ -751,13 +751,16 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 
 From the manual check (6.23):
 
-- **`:review` back to an open review of the same scope sets no status.** Each read names its scope (6.7), and a switch isn't a read. But nothing else on screen names the scope. Recommended: say `Reviewing <scope> changes` on a switch too.
 - **Two refusals give each other's message.** Typing at column 1 of a header is refused as a join, since that column ends the run above. Backspace at column 1 of an added row under a removed row is refused as an edit to the removed line. Each is true of the text, not of what the cursor is on. Recommended: pick the message by the cursor's row.
 - Smaller, each a yes or no:
   - Added lines with no removed counterpart, in a hunk that also removes, get the changed-word tint across the row. A hunk that only adds gets the plain tint.
   - The rule after a header takes `ui.window`'s background too, so it's darker than the row.
   - Where the cursor goes after `Enter` opens a gap. It lands on the last line shown.
   - The picker's `all` list puts staged-only files last. The review sorts by path.
+
+Decided, 2026-10-19:
+
+- **`:review` back to an open review says its scope**, `Reviewing <scope> changes`, as a read does (6.7). Nothing else on screen names the scope.
 
 Decided, 2026-10-18:
 
