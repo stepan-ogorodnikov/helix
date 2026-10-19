@@ -78,16 +78,16 @@ impl FileChange {
     }
 }
 
-/// Files for `view`. `All` lists each path once, as it is against `HEAD`: a path
-/// both staged and unstaged keeps its unstaged entry, unless that's a
-/// modification, which leaves the file what its staged change made it, such as
-/// added or renamed.
+/// Files for `view`, in path order. `All` lists each path once, as it is
+/// against `HEAD`: a path both staged and unstaged keeps its unstaged entry,
+/// unless that's a modification, which leaves the file what its staged change
+/// made it, such as added or renamed.
 pub fn visible_changes(
     view: ChangeView,
     unstaged: &[FileChange],
     staged: &[FileChange],
 ) -> Vec<FileChange> {
-    match view {
+    let mut changes: Vec<FileChange> = match view {
         ChangeView::Unstaged => unstaged.to_vec(),
         ChangeView::Staged => staged.to_vec(),
         ChangeView::All => {
@@ -107,7 +107,9 @@ pub fn visible_changes(
                 .cloned()
                 .collect()
         }
-    }
+    };
+    changes.sort_by(|a, b| a.path().cmp(b.path()));
+    changes
 }
 
 #[cfg(test)]
@@ -162,5 +164,27 @@ mod test {
                 "{case}"
             );
         }
+    }
+
+    #[test]
+    fn each_list_is_in_path_order() {
+        let modified = |name: &str| FileChange::Modified {
+            path: PathBuf::from(name),
+        };
+        let unstaged = [modified("c"), modified("a")];
+        let staged = [modified("d"), modified("b")];
+        let paths = |view| {
+            visible_changes(view, &unstaged, &staged)
+                .iter()
+                .map(|change| change.path().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paths(ChangeView::Unstaged), ["a", "c"]);
+        assert_eq!(paths(ChangeView::Staged), ["b", "d"]);
+        assert_eq!(
+            paths(ChangeView::All),
+            ["a", "b", "c", "d"],
+            "staged-only files among the rest"
+        );
     }
 }

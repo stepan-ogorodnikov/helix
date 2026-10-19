@@ -8,7 +8,8 @@ use helix_vcs::{visible_changes, ChangeKind, ChangeView, FileChange};
 use helix_view::theme::Style;
 use tui::text::Span;
 
-use crate::ui::overlay::overlaid;
+use crate::job;
+use crate::ui::overlay::{overlaid, Overlay};
 use crate::ui::{Picker, PickerColumn};
 
 use super::Context;
@@ -110,14 +111,41 @@ pub(super) fn changed_file_picker(cx: &mut Context) {
         }
     }
 
-    /// Clears the live injector when the status walk drops its callback.
+    /// Clears the live injector when the status walk drops its callback, and
+    /// rebuilds the `All` list if it's showing.
     struct FinishScan(Arc<Mutex<Lists>>);
 
     impl Drop for FinishScan {
         fn drop(&mut self) {
-            if let Ok(mut lists) = self.0.lock() {
-                lists.injector = None;
-            }
+            let Some(injector) = self.0.lock().ok().and_then(|mut lists| {
+                let injector = lists.injector.take();
+                injector.filter(|_| lists.mode == ChangeView::All)
+            }) else {
+                return;
+            };
+            // WHY: the live `All` list took each path's first entry as the walk
+            // found it, so a staged rename that came after the path's unstaged
+            // modification said modified. Rebuilt, it says what each file is
+            // against `HEAD`, in path order.
+            let lists = Arc::clone(&self.0);
+            job::dispatch_blocking(move |_, compositor| {
+                let mut lists = lists.lock().unwrap();
+                if !injector.is_alive() || lists.mode != ChangeView::All {
+                    return;
+                }
+                let Some(Overlay {
+                    content: picker, ..
+                }) = compositor.find::<Overlay<Picker<FileChange, FileChangeData>>>()
+                else {
+                    return;
+                };
+                let items = visible_changes(ChangeView::All, &lists.unstaged, &lists.staged);
+                lists.shown = items
+                    .iter()
+                    .map(|change| change.path().to_path_buf())
+                    .collect();
+                picker.replace_items(items);
+            });
         }
     }
 
