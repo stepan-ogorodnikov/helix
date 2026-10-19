@@ -5,7 +5,8 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9c done 2026-10-18. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23). The rulings it raised are made (8). Completion, 9d, is a spike for after that (6.19).
+Status: the 9d spike done 2026-10-20. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23).
+The spike's prototype gives the review completion and signature help from the file's language servers, with 7 seams inside upstream functions (6.24). Whether to build them, as 9e and 9f, is open (8).
 
 ## Bottom line
 
@@ -18,7 +19,7 @@ Status: phase 9c done 2026-10-18. Phases 1–9c are complete, and the manual che
 - **How:** the stream is an ordinary Helix document. Fork-owned code builds it and keeps it current through upstream's events and public API.
 - **No hard fork.** The read-only review costs about 15–20 one-line seams, plus command-table rows. Editing adds about 3.
   None is in `document.rs` or `application.rs`. `ui/editor.rs` takes the most, about 5–7.
-- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP adds 0.4–0.65k for diagnostics, goto, hover, code actions, and rename. Completion is unknown until a spike.
+- **Size:** about 2.5–4k fork-owned lines for the read-only review, plus tests. Editing adds 0.9–1.5k. LSP adds 0.4–0.65k for diagnostics, goto, hover, code actions, and rename. Completion and signature help would add about 0.35–0.45k, by the 9d spike.
 - **Biggest risks:** keeping the cursor still while rows appear and vanish around it (phase 2, which the read-only review already needs).
   Then, for editing, the sync engine, undo across files, and completion.
 
@@ -283,7 +284,7 @@ The seams pass whether a menu is open, from `EditorView::completion`.
 **Until phase 8a**, `u` in the stream finds an empty history, and `ret` then `u` undoes in the file.
 **Until phase 8b**, `:w` in the stream fails, as in phase 1, and `:wa` writes every file.
 
-**Until phase 9a**, the stream has no LSP hover or goto. Completion waits for 9d's spike. Until then, editing in the stream is plain text editing:
+**Until phase 9a**, the stream has no LSP hover or goto. LSP completion waits for 9e, and signature help for 9f. Until then, editing in the stream is plain text editing:
 
 - no LSP completion. Word and path completion work, as in any buffer.
 - new lines copy the previous line's indent, since the stream has no indent queries
@@ -330,16 +331,26 @@ So each LSP feature in the stream works through the file under the cursor. Scope
 - The stream's own rename opens a prompt prefilled with the word under the cursor. On confirm it sends the request to the file's server, at the place the cursor had, and applies the edit as upstream does.
 - It leaves out `prepareRename`, the server's own range and placeholder. A file that changed while the prompt was open refuses the rename.
 
-**Completion and signature help (9d, a spike after 9a–9c).**
+**Completion and signature help (9e–9f, from the 9d spike, 6.24).**
 
-- They start from the completion handler while you type, not from a command, so the view can't be lent.
-- The request is built from the focused buffer (`handlers/completion/request.rs`). Item edits are positions in the file, applied to the focused buffer (`ui/completion.rs`).
-  Auto-import edits land near the file's top, usually in hidden lines, so they'd go to the file's buffer directly.
+- They start from the completion handler while you type, not from a command, so the view can't be lent for all of it.
+- The requests: a seam in `request_completions` adds the servers of the file under the cursor to the stream's own word and path completion.
+  `review::lend` readies the file's buffer, and upstream's `request_completions_from_language_server` asks from it. The savepoint stays the stream's.
+- The items keep the file's places. A row holds its file's line char for char, so an edit moves onto the stream by changing its line numbers to those of the rows that show them, in any offset encoding.
+  The menu's preview and accept arms (`ui/completion.rs`) each move the item right before they turn it into a transaction, after any resolve. The menu applies it to the stream like any item, and the sync forwards it.
+- An item's other edits, like an import, are places in the file, usually on lines the review doesn't show.
+  The accept arm takes them, and the next sync makes them in the file's buffer right after it forwards the item.
 - Preview inserts are ghost transactions: a savepoint restore, then the final edit. The sync forwards them all in order, so the source sees the preview too.
-- That takes seams inside upstream functions, in helix-term, not helix-core. The spike says how many, and whether they're worth it. It may end in not doing it.
+- Typing into an open menu asks again for an incomplete list, through a seam at the top of `request_incomplete_completion_list`.
+  That runs inside the key, before the frame's sync has forwarded the char, so it runs the sync first, held as under a menu.
+- Signature help lends the view inside `request_signature_help`. Its answer reads only the focused buffer's language.
+- Trigger characters come from the file's servers, through one seam in `trigger_auto_completion` and one in signature help's insert hook.
 
-Rejected: lending the view for completion. Its answer arrives after the view shows the stream again.
-Goto and hover answer late too, but their answers don't read the buffer they asked from.
+Rejected:
+
+- Lending the view for completion. Its answer arrives after the view shows the stream again.
+  Goto and hover answer late too, but their answers don't read the buffer they asked from.
+- Rewriting an item's line numbers when the answer arrives. A resolve can answer with the file's places again (6.24).
 
 ## 4. Upstream seams
 
@@ -364,7 +375,10 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-view/Cargo.toml` | 10 | `imara-diff`, unless the diff goes through `helix-vcs` | 1 |
 | `book/src/*` | | Commands, keys, theme scopes | each |
 | `helix-term/tests/integration.rs` | 1 | `mod fork_review;` | 1 |
-| `helix-term/src/handlers/completion/*`, `ui/completion.rs` | 0, 1 | Not known until the 9d spike | 9d |
+| `helix-term/src/handlers/completion/request.rs` | 0 | `pub(super) mod review;`, the file's requests in `request_completions`, and the review's re-request at the top of `request_incomplete_completion_list` | 9e |
+| `helix-term/src/handlers/completion.rs` | 0 | The file's trigger characters in `trigger_auto_completion` | 9e |
+| `helix-term/src/ui/completion.rs` | 1 | The item moved onto the rows in the menu's preview arm and accept arm, and one import | 9e |
+| `helix-term/src/handlers/signature_help.rs` | 1 | `mod review;`, the lend at the top of `request_signature_help`, and the file's trigger characters in the insert hook | 9f |
 
 Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 
@@ -381,6 +395,9 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 - `helix-term/src/commands/review.rs`: `:review`, `ret`, navigation, refresh, then undo and redo.
 - `helix-term/src/commands/typed/review_write.rs`: `:w` in the stream. Phase 8b.
 - `helix-term/src/commands/review/lsp.rs`: the lending versions of goto, references, hover, and code actions, and the stream's rename. Phases 9a and 9c.
+- `helix-view/src/review/complete.rs`: moves a completion item onto the rows, and keeps its other edits for the file. Phase 9e.
+- `helix-term/src/handlers/completion/request/review.rs`: the review's completion requests and trigger characters, a child of `request` so it can call upstream's private request builder. Phase 9e.
+- `helix-term/src/handlers/signature_help/review.rs`: signature help with the view lent, and its trigger characters. Phase 9f.
 - `helix-term/src/keymap/review.rs`: the stream keymap overlay.
 - `helix-term/src/ui/text_decorations/review.rs`, `.../review/words.rs`: highlights, tints, header and gap rows, changed words.
 - Phase 6: `helix-vcs/src/git/index.rs`, `helix-vcs/src/index.rs`, `helix-term/src/commands/typed/stage_hunk.rs`, restored from `archive/diff-review` and adapted.
@@ -412,7 +429,9 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 9a. Goto and hover | Done | Goto, references, hover, and code actions from the stream, by lending its view to the file | 150–250. Actual: about 150, plus 120 of tests. | Medium: the lend has to leave no trace |
 | 9b. Diagnostics | Done | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250. Actual: about 190, plus 105 of tests. | Low |
 | 9c. Rename | Done | Rename from the stream, through its own prompt | 80–150. Actual: about 95, plus 10 of tests. | Low |
-| 9d. Completion | Spike, later | Completion and signature help from the file's servers | Unknown | **High**: seams inside upstream functions |
+| 9d. Completion spike | Done | A prototype of completion and signature help from the file's servers, tested against rust-analyzer (6.24) | Actual: about 400, plus 240 of tests, on the local branch `spike/review-completion` | **High**: seams inside upstream functions |
+| 9e. Completion | Proposed (8) | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350 | Medium: the order of an item and its other edits |
+| 9f. Signature help | Proposed (8) | Signature help from the file's server, by lending the view, with its trigger characters | 60–100 | Low |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
 Each later phase adds to it. Phase 2 comes second because it's the riskiest phase that the read-only review needs, and phase 7 reuses its reconcile.
@@ -730,6 +749,38 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 - The review's rename fills in a selection longer than one character, as upstream does when it has no `prepareRename` answer. After a search, `;` first gives the word under the cursor.
 - The harness can drive the review end to end, rust-analyzer included, with the working directory set to a fixture repo and one `Application` per test, run one at a time. A second `Application` in one test registers its hooks twice. The changed-files picker can't run there: its matcher thread panics outside the test's runtime.
 
+### 6.24 Phase 9d: found
+
+Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (`e2c4bd45b`), with an end-to-end test against rust-analyzer 1.90. Nothing of it is on `fork`.
+
+- It works, with 7 seams inside upstream functions, in four files upstream changed 0–1 times in the year. Every seam is added lines. No upstream line changes, and none is in a hot file. Two `mod` lines and one import come on top.
+  Two of the seams are optional: the trigger characters (3.10).
+- What the test showed, typing in a new row of a review against `HEAD`:
+  - `s.gr`, `C-n`, `ret` puts `s.grow(by);`, from rust-analyzer's snippet, in the file once, and the review shows it.
+  - An item from another module puts `use crate::shapes::Square;` at the file's top, inside a gap, and the review shows it as an added row. `u` in the review then takes out the item and the import as one step.
+  - `.` and `(` reach the server as trigger characters. Typing into an open menu asks again for rust-analyzer's incomplete list, at the right place in the file.
+  - `(` gets `fn grow(&mut self, by: f64)` from the file's server.
+  - The 43 review integration tests and the 27 unit tests still pass with the prototype.
+- The order of an item and its other edits matters. Made first, the other edits would move the file's version, and the sync would refuse the item as an edit to a file that changed.
+  So they wait on the stream until the next sync has forwarded the item, then go to the file through `edit_file`, into the same undo step.
+- Found on the way:
+  - Rewriting an item's line numbers when the answer arrives doesn't hold. rust-analyzer resolves an item by computing it again from its `data`, so the resolved item has the file's line numbers.
+    In the first run, that put `Square` on the file's last line: the row with the cursor line's number in the file. The review's checks let it through, since that row is editable. The menu now moves the item when it uses it, after any resolve.
+  - The lend set the file's selection even when it was already there. `set_selection` fires `SelectionDidChange`, which asks signature help again while it's open, which lends again: a request every 120 ms.
+    `set_selection` widens a point to a char, so the check compares the widened selection.
+  - A lend from a job, as a completion request's, can run before the sync has forwarded the last edit, when the rows don't show the stream's text. The lend refuses then. 9a's commands never meet it, since the sync at the start of `handle_event` runs first.
+  - The re-request for an incomplete list runs inside the key that typed the char, before the frame's sync. It runs the sync itself, held as under a menu, then lends.
+- Left as upstream has it:
+  - A preview reaches the file's server. Upstream keeps a preview from the server as a ghost transaction. The sync forwards it as an ordinary edit, so the file's buffer and its server stay in step, as with word completion since 7a.
+  - The docs popup and the signature popup aren't highlighted. Both read the focused buffer's language, which is the stream's, and it has none. One seam each would fix it (8).
+  - With several cursors, an item goes in at every cursor, as upstream does. A cursor on another file's row edits that file.
+- Not tested:
+  - Snippet tabstops live in the stream's buffer and map through relayouts. The test accepted a snippet but didn't `Tab` through it.
+  - An item whose edit reaches a line the review doesn't show goes in at the cursor, over the word before it. rust-analyzer sent none.
+  - The first trigger character typed in a file that isn't open triggers nothing. The file loads at the sync after the key, and its server starts then.
+  - Signature help lends when you enter insert mode on a row, so it loads the file then, not at the first edit.
+- The end-to-end test needs rust-analyzer, and the fixture as the working directory for the server's root. So it can't run in the parallel suite (`agents/TESTING.md`). The log line in `show_signature_help` is its only view of the popup.
+
 ## 7. Risks
 
 | Risk | Where | Mitigation |
@@ -746,11 +797,18 @@ Checked 2026-10-19, against a checklist and a `setup.sh` repo outside the checko
 | Upstream churn | `ui/editor.rs` (9/yr), `commands.rs` (39/yr) | Seams stay one line. Bodies live in fork files. |
 | The lend leaves the view on the file | Phase 9a | The view goes back as soon as upstream's command returns, with nothing between. A test checks the view and its selection after a lent command. |
 | Upstream starts reading the focused buffer in an answer | Phase 9a, on a rebase | The ledger lists the lent commands. A rebase that touches `commands/lsp.rs` rereads them. |
-| Completion needs seams inside upstream functions | Phase 9d | A spike first, after 9a–9c, which may end in not doing it. Without it, the stream keeps word and path completion. |
+| Completion needs seams inside upstream functions | Phases 9e–9f | The spike found 7, all added lines, in files upstream changed 0–1 times a year. The ledger names the function each sits in. Without them, the stream keeps word and path completion. |
+| A resolved item lands on another file's row | Phase 9e | Items move onto the rows where the menu uses them, after any resolve. A unit test keeps an edit on a line the review doesn't show off the rows. |
 
 ## 8. Open decisions
 
-None.
+Raised by the 9d spike, 2026-10-20 (6.24):
+
+- **Build completion and signature help?** Recommended: yes, as 9e then 9f. 9e is the riskier, and 9f needs only the lend.
+- **The trigger-character seams.** Recommended: both. Without them, `.` opens no menu until two word chars follow, and `(` opens no signature help.
+- **Tests.** Recommended: unit tests for moving an item onto the rows and for the deferred edits, plus the spike's end-to-end test kept off the suite and run again at the manual check.
+  The other way is a fake language server, a test script that answers completion and signature help, for integration tests in the suite. No such harness exists upstream.
+- **Highlighting the popups.** Two more seams, in `Completion::render` and `show_signature_help`, would highlight the docs and the signature in the file's language. Recommended: leave them out.
 
 Decided, 2026-10-19:
 
