@@ -137,9 +137,11 @@ fn write_picked(
         .collect();
     let mut written = 0;
     for file in stream.picked(&rows) {
-        written += write(&file, trust_full).with_context(|| {
+        // WHY: a typable command shows only the outermost message of its
+        // error, so a context would hide the reason.
+        written += write(&file, trust_full).map_err(|err| {
             let path = helix_stdx::path::get_relative_path(file.change.path());
-            format!("{}", path.display())
+            anyhow!("{}: {err:#}", path.display())
         })?;
     }
     if written > 0 {

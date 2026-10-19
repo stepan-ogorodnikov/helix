@@ -1714,6 +1714,42 @@ async fn unstaging_puts_back_the_head_text() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn staging_a_conflicted_file_says_why_it_is_refused() -> anyhow::Result<()> {
+    let repo = repo(&[("a.txt", "base\n")], &[]);
+    let file = repo.path().join("a.txt");
+    git(repo.path(), &["switch", "--quiet", "--create", "other"]);
+    std::fs::write(&file, "other\n")?;
+    git(
+        repo.path(),
+        &["commit", "--quiet", "--all", "--message", "other"],
+    );
+    git(repo.path(), &["switch", "--quiet", "-"]);
+    std::fs::write(&file, "main\n")?;
+    git(
+        repo.path(),
+        &["commit", "--quiet", "--all", "--message", "main"],
+    );
+    // WHY: the merge stops on the conflict, so it fails.
+    Command::new("git")
+        .arg("-C")
+        .arg(repo.path())
+        .args(["merge", "--quiet", "other"])
+        .env_remove("GIT_DIR")
+        .output()?;
+    let mut app = app_on(file.clone())?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "]g:stage-hunk<ret>", |app| {
+        status(app).starts_with("'stage-hunk'")
+    })
+    .await?;
+    assert_eq!(
+        status(&app),
+        format!("'stage-hunk': {}: it has unresolved conflicts", shown(file))
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_new_file_can_be_staged_and_unstaged() -> anyhow::Result<()> {
     let repo = repo(&[("a.txt", "a1\n")], &[("c.txt", Some("c1\nc2\n"))]);
     let mut app = app_on(repo.path().join("a.txt"))?;

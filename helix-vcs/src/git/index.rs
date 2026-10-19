@@ -91,7 +91,7 @@ pub fn set_index_text(file: &Path, text: Option<&[u8]>, trust_full: bool) -> Res
         .iter()
         .any(|entry| entry.stage() != Stage::Unconflicted)
     {
-        bail!("{} has unresolved conflicts", file.display());
+        bail!("it has unresolved conflicts");
     }
     let path = gix::path::from_bstr(rela_path.as_bstr());
     let git = |args: &[&OsStr], input: &[u8]| run_git(&repo, &work_dir, args, input);
