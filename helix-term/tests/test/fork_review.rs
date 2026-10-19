@@ -588,6 +588,57 @@ async fn closing_the_review_closes_the_saved_files_it_opened() -> anyhow::Result
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_saved_file_closes_with_the_review_that_left_it_its_view() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let (a, b) = (repo.path().join("a.txt"), repo.path().join("b.txt"));
+    let mut app = app_on(a.clone())?;
+    start_review(&mut app).await?;
+    // WHY: with `a.txt` closed, the review's view has nothing to go back to,
+    // so closing the review gives it the only buffer left, `b.txt`.
+    let edit = format!(":buffer-close {}<ret>/^B<ret>ix<esc>:wa<ret>", a.display());
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (Some(&edit), None),
+            (
+                Some(":buffer-close<ret>"),
+                Some(&|app| {
+                    assert!(app.editor.review.stream().is_none());
+                    assert!(app.editor.document_by_path(&b).is_none());
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_opened_from_the_review_stays_open_after_it() -> anyhow::Result<()> {
+    let repo = three_hunks();
+    let b = repo.path().join("b.txt");
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (Some("/^B<ret>ix<esc>:wa<ret>"), None),
+            (
+                Some("<ret><C-o>:buffer-close<ret>"),
+                Some(&|app| {
+                    assert!(app.editor.review.stream().is_none());
+                    assert!(app.editor.document_by_path(&b).is_some());
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
     let repo = tempfile::tempdir()?;
     git(repo.path(), &["init", "--quiet"]);

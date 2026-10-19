@@ -472,7 +472,7 @@ Each file starts with a row naming it and how it changed. Its hunks follow with 
 The gutter shows each row's old and new line numbers, then `+` for an added line or `-` for a removed one.
 
 An edit to added or unchanged lines goes to the file's buffer as you type, new and deleted lines too, and the rows follow it: an edited line gets its old version above it.
-A file that isn't open gets a buffer in the background, which closes with the review unless it shows in a view or holds unsaved changes. Nothing is saved until you write it.
+A file that isn't open gets a buffer in the background, which closes with the review unless you opened it in a view meanwhile, or it holds unsaved changes. Nothing is saved until you write it.
 `:w` in the review writes every file it shows that has unsaved changes, however they were made. `:x` and `:update` write nothing there, since the review itself never has unsaved changes.
 `u` in the review undoes its last edit in every file the edit changed, and `U` redoes it. One command, or one insert, is one step, and so is a `:review-restore`.
 When one of those files changed since in another way, in its own view for example, nothing is undone, and the status line names the file. `u` in that file undoes there.

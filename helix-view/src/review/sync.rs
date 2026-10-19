@@ -54,6 +54,7 @@ pub fn sync(editor: &mut Editor, completing: bool) {
         editor.set_status(message);
     }
     save_selections(editor, doc_id);
+    keep_shown(editor);
     fit_file_style(editor, doc_id);
     fit_gutters(editor);
 }
@@ -89,18 +90,24 @@ fn fit_file_style(editor: &mut Editor, doc_id: DocumentId) {
     }
 }
 
-// WHY: the review opened these in the background. With it gone nothing shows
-// them, and one that holds nothing unsaved has no reason to stay open.
+// WHY: a view shows a buffer the review loaded only once you open it there, as
+// by `Enter`, so from then on it's yours, not the review's to close. A lent
+// view never counts, since the sync doesn't run inside a key.
+fn keep_shown(editor: &mut Editor) {
+    let Some(stream) = editor.review.stream.as_mut() else {
+        return;
+    };
+    stream
+        .loaded
+        .retain(|&doc| !editor.tree.views().any(|(view, _)| view.doc == doc));
+}
+
+// WHY: no view showed these while the review was open. One may show now, since
+// the sync runs after Helix gives the closed review's view to another buffer,
+// so a view doesn't keep it. Unsaved changes do: the close is refused.
 fn close_loaded(editor: &mut Editor, loaded: Vec<DocumentId>) {
     for doc in loaded {
-        let unsaved = editor
-            .documents
-            .get(&doc)
-            .is_none_or(|doc| doc.is_modified());
-        let shown = editor.tree.views().any(|(view, _)| view.doc == doc);
-        if !unsaved && !shown {
-            let _ = editor.close_document(doc, false);
-        }
+        let _ = editor.close_document(doc, false);
     }
 }
 
