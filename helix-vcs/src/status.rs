@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Which side of `git status` a [`FileChange`] came from.
@@ -78,8 +78,10 @@ impl FileChange {
     }
 }
 
-/// Files for `view`. `All` lists each path once and keeps the unstaged entry when a
-/// path is both staged and unstaged.
+/// Files for `view`. `All` lists each path once, as it is against `HEAD`: a path
+/// both staged and unstaged keeps its unstaged entry, unless that's a
+/// modification, which leaves the file what its staged change made it, such as
+/// added or renamed.
 pub fn visible_changes(
     view: ChangeView,
     unstaged: &[FileChange],
@@ -89,9 +91,17 @@ pub fn visible_changes(
         ChangeView::Unstaged => unstaged.to_vec(),
         ChangeView::Staged => staged.to_vec(),
         ChangeView::All => {
+            let staged_at: HashMap<&Path, &FileChange> = staged
+                .iter()
+                .map(|change| (change.path(), change))
+                .collect();
             let mut seen = HashSet::new();
             unstaged
                 .iter()
+                .map(|change| match (change, staged_at.get(change.path())) {
+                    (FileChange::Modified { .. }, Some(staged)) => staged,
+                    _ => change,
+                })
                 .chain(staged.iter())
                 .filter(|change| seen.insert(change.path().to_path_buf()))
                 .cloned()
@@ -104,21 +114,53 @@ pub fn visible_changes(
 mod test {
     use super::*;
 
-    #[test]
-    fn all_keeps_one_entry_and_prefers_unstaged() {
-        let path = PathBuf::from("a.txt");
-        let unstaged = vec![FileChange::Modified { path: path.clone() }];
-        let staged = vec![FileChange::Added { path: path.clone() }];
+    fn label(change: &FileChange) -> String {
+        match change {
+            FileChange::Untracked { .. } => "untracked".into(),
+            FileChange::Added { .. } => "added".into(),
+            FileChange::Modified { .. } => "modified".into(),
+            FileChange::Conflict { .. } => "conflict".into(),
+            FileChange::Deleted { .. } => "deleted".into(),
+            FileChange::Renamed { from_path, .. } => {
+                format!("renamed from {}", from_path.display())
+            }
+        }
+    }
 
-        let all = visible_changes(ChangeView::All, &unstaged, &staged);
-        assert!(matches!(all.as_slice(), [FileChange::Modified { .. }]));
-        assert!(matches!(
-            visible_changes(ChangeView::Staged, &unstaged, &staged).as_slice(),
-            [FileChange::Added { .. }]
-        ));
-        assert_eq!(
-            visible_changes(ChangeView::Unstaged, &unstaged, &staged).len(),
-            1
-        );
+    #[test]
+    fn all_lists_a_staged_and_unstaged_path_once_as_it_is_against_head() {
+        let path = PathBuf::from("a.txt");
+        let modified = FileChange::Modified { path: path.clone() };
+        let cases = [
+            (
+                "added, then modified",
+                FileChange::Added { path: path.clone() },
+                modified.clone(),
+                "added",
+            ),
+            (
+                "renamed, then modified",
+                FileChange::Renamed {
+                    from_path: PathBuf::from("old.txt"),
+                    to_path: path.clone(),
+                },
+                modified.clone(),
+                "renamed from old.txt",
+            ),
+            (
+                "modified, then deleted",
+                modified.clone(),
+                FileChange::Deleted { path: path.clone() },
+                "deleted",
+            ),
+        ];
+        for (case, staged, unstaged, expected) in cases {
+            let all = visible_changes(ChangeView::All, &[unstaged], &[staged]);
+            assert_eq!(
+                all.iter().map(label).collect::<Vec<_>>(),
+                [expected],
+                "{case}"
+            );
+        }
     }
 }
