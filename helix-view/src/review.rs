@@ -22,6 +22,7 @@ use crate::editor::Action;
 use crate::{align_view, Align, DocumentId, Editor, ViewId};
 use reconcile::Key;
 
+mod complete;
 mod diagnostics;
 mod forward;
 pub(crate) mod gutter;
@@ -33,6 +34,7 @@ mod sync;
 mod syntax;
 mod words;
 
+pub use complete::{accept_item, file_at_cursor, item_on_rows};
 pub use lend::lend;
 pub use log::{log_step, redo, undo};
 pub use sync::{load, sync};
@@ -161,6 +163,8 @@ pub struct Stream {
     relayout: bool,
     log: log::Log,
     reports: diagnostics::Reports,
+    /// An accepted completion's other edits, until the sync forwards it.
+    deferred: Option<complete::Deferred>,
 }
 
 /// The rows of each hunk: a run of removed and added rows.
@@ -561,6 +565,7 @@ pub fn show(editor: &mut Editor, root: PathBuf, scope: ChangeView, sections: Vec
         relayout: false,
         log: log::Log::default(),
         reports: diagnostics::Reports::new(),
+        deferred: None,
     });
     update(editor, sections.into_iter().map(File::from).collect(), None);
     to_top(editor, doc_id);
@@ -879,6 +884,7 @@ mod tests {
             relayout: false,
             log: log::Log::default(),
             reports: diagnostics::Reports::new(),
+            deferred: None,
         }
     }
 

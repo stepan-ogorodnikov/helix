@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::bail;
+use helix_lsp::util::generate_transaction_from_edits;
+use helix_lsp::{lsp, OffsetEncoding};
 use helix_term::application::Application;
 use helix_view::document::Mode;
 use helix_view::input::parse_macro;
-use helix_view::review::Stream;
+use helix_view::review::{self, Stream};
 use helix_view::{current_ref, doc, view};
 use tempfile::TempDir;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -18,6 +20,8 @@ use crossterm::event::{Event, KeyEvent};
 use termina::event::{Event, KeyEvent};
 
 use super::*;
+
+mod rust_analyzer;
 
 fn git(dir: &Path, args: &[&str]) {
     let output = Command::new("git")
@@ -690,6 +694,124 @@ async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
                 }),
             ),
         ],
+        false,
+    )
+    .await
+}
+
+/// `a.txt` with its ninth line changed, as the review shows it. Row 1 is the
+/// gap, row 5 the removed `9`, row 6 `nine`, and the cursor at its end.
+async fn on_ninth_changed() -> anyhow::Result<(TempDir, Application)> {
+    let repo = repo(
+        &[("a.txt", TEN)],
+        &[("a.txt", Some("1\n2\n3\n4\n5\n6\n7\n8\nnine\n10\n"))],
+    );
+    let mut app = app_on(repo.path().join("a.txt"))?;
+    start_review(&mut app).await?;
+    run_until(&mut app, "/nine<ret>A", |app| {
+        app.editor.mode == Mode::Insert
+    })
+    .await?;
+    Ok((repo, app))
+}
+
+/// Accepts an item as the completion menu does: it moves the item onto the
+/// rows, then applies its edit to the review, with `more` edits of the review
+/// as other cursors would add.
+fn accept(app: &mut Application, more: Vec<lsp::TextEdit>) {
+    let place = |line, start, end| {
+        lsp::Range::new(
+            lsp::Position::new(line, start),
+            lsp::Position::new(line, end),
+        )
+    };
+    let mut item = lsp::CompletionItem {
+        text_edit: Some(lsp::CompletionTextEdit::Edit(lsp::TextEdit::new(
+            place(8, 0, 4),
+            "ninety".into(),
+        ))),
+        additional_text_edits: Some(vec![lsp::TextEdit::new(place(0, 0, 0), "0\n".into())]),
+        ..Default::default()
+    };
+    let (view, doc) = (view!(app.editor).id, stream(app).doc);
+    review::accept_item(
+        &mut app.editor.review,
+        &app.editor.documents[&doc],
+        view,
+        &mut item,
+        OffsetEncoding::Utf8,
+    );
+    assert_eq!(item.additional_text_edits, None, "the file gets them");
+    let Some(lsp::CompletionTextEdit::Edit(edit)) = item.text_edit else {
+        panic!("the item keeps its edit");
+    };
+    assert_eq!(edit.range, place(6, 0, 4), "on `nine`'s row");
+    let doc = app.editor.documents.get_mut(&doc).unwrap();
+    let edits = more.into_iter().chain([edit]).collect();
+    let transaction = generate_transaction_from_edits(doc.text(), edits, OffsetEncoding::Utf8);
+    doc.apply(&transaction, view);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_completions_other_edits_reach_its_file_after_it_as_one_step() -> anyhow::Result<()> {
+    let (repo, mut app) = on_ninth_changed().await?;
+    let file = repo.path().join("a.txt");
+    accept(&mut app, Vec::new());
+
+    test_key_sequences(
+        &mut app,
+        vec![
+            (
+                Some("<esc>"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("0\n1\n2\n3\n4\n5\n6\n7\n8\nninety\n10\n"),
+                        "{}",
+                        status(app)
+                    );
+                    assert!(
+                        stream_text(app).starts_with(&review_of(&file, "0\n1\n")),
+                        "the import shows as a row"
+                    );
+                }),
+            ),
+            (
+                Some("u"),
+                Some(&|app| {
+                    assert_eq!(
+                        buffer_text(app, &file).as_deref(),
+                        Some("1\n2\n3\n4\n5\n6\n7\n8\nnine\n10\n")
+                    );
+                }),
+            ),
+        ],
+        false,
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_completion_put_back_takes_its_other_edits_with_it() -> anyhow::Result<()> {
+    let (repo, mut app) = on_ninth_changed().await?;
+    let file = repo.path().join("a.txt");
+    let review = stream_text(&app);
+    let on_removed_row = lsp::Range::new(lsp::Position::new(5, 0), lsp::Position::new(5, 0));
+    accept(
+        &mut app,
+        vec![lsp::TextEdit::new(on_removed_row, "ninety".into())],
+    );
+
+    test_key_sequence(
+        &mut app,
+        Some("<esc>"),
+        Some(&|app| {
+            assert_eq!(stream_text(app), review, "the edit is put back");
+            assert_eq!(
+                buffer_text(app, &file).as_deref(),
+                Some("1\n2\n3\n4\n5\n6\n7\n8\nnine\n10\n")
+            );
+        }),
         false,
     )
     .await

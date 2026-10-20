@@ -35,6 +35,11 @@ pub fn lend(editor: &mut Editor) -> Result<DocumentId, String> {
         return Err("A staged review shows the index, not the files. ret opens the file.".into());
     }
     let doc = &editor.documents[&stream_doc];
+    // WHY: a lend from a job, as a completion request's, can run before the
+    // sync has forwarded the last edit. The rows don't show the text then.
+    if doc.version() != stream.version {
+        return Err("The review hasn't caught up with the last edit".to_string());
+    }
     let text = doc.text().slice(..);
     let range = doc.selection(view).primary();
     let Some((file, line, column)) = place(stream, text, range.cursor(text)) else {

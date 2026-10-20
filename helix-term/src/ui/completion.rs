@@ -183,6 +183,16 @@ impl Completion {
 
                     match item {
                         CompletionItem::Lsp(item) => {
+                            // FORK: review-stream
+                            let item = &LspCompletionItem {
+                                item: helix_view::review::item_on_rows(
+                                    &editor.review,
+                                    doc,
+                                    view.id,
+                                    &item.item,
+                                ),
+                                ..item.clone()
+                            };
                             let (transaction, _) = lsp_item_to_transaction(
                                 doc,
                                 view.id,
@@ -229,6 +239,14 @@ impl Completion {
                             };
 
                             let encoding = language_server.offset_encoding();
+                            // FORK: review-stream
+                            helix_view::review::accept_item(
+                                &mut editor.review,
+                                doc,
+                                view.id,
+                                &mut item.item,
+                                encoding,
+                            );
                             let (transaction, snippet) = lsp_item_to_transaction(
                                 doc,
                                 view.id,

@@ -9,7 +9,7 @@ use helix_core::{diff::compare_ropes, history::History, Rope, Transaction};
 
 use helix_vcs::ChangeView;
 
-use super::{diagnostics, edit_file, forward, layout, log, update, Content, Row, Stream};
+use super::{complete, diagnostics, edit_file, forward, layout, log, update, Content, Row, Stream};
 use crate::document::{from_reader, DocumentOpenError, Mode};
 use crate::editor::Action;
 use crate::tree::Tree;
@@ -29,6 +29,7 @@ pub fn sync(editor: &mut Editor, completing: bool) {
     }
 
     let taken = take_edits(editor, doc_id);
+    complete::make_deferred(editor, matches!(taken, Some(Err(_))));
     let mut moved = taken.is_some();
     // WHY: a completion's preview restores a savepoint, which reverts every
     // edit since, a relayout too. A removed row it brought back would read as

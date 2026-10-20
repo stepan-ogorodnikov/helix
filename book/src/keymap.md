@@ -481,6 +481,7 @@ A new line takes the file's line ending, and `Tab` and `>` the file's indent. An
 An edit to a removed line, a header, or a row of unchanged lines left out is put back, and so is one that would join a line to such a row. A staged review takes no edits.
 An edit to a file's buffer shows in the review, and the cursor stays on the line it was on.
 Each file's diagnostics show on its rows, from its buffer when it's open, or else from what its language servers reported for it. Inline diagnostics, the gutter's dot, and `]d` work as in a file.
+In insert mode, completion offers the items of the row's file's language servers too, and their trigger characters, like `.`, open it. An item's other edits, like an import, go to the file with it, and `u` in the review takes out both.
 The language server keys above work on added and unchanged lines. They open the row's file in the background, which closes with the review, and the first key can find its server still starting.
 With a review open, `:review` switches to it, and the status line says which changes it shows. `:review-refresh` lists the changed files again and rereads the ones that aren't open, for changes made outside Helix.
 The review swaps these commands for its own, on whatever keys they're bound to:

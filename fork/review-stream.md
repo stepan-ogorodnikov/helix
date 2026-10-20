@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: completion and signature help planned 2026-10-20, as 9e and 9f, from the 9d spike (6.24). Phases 1–9d are complete, and the manual check passed 2026-10-19 after three fixes (6.23).
+Status: phase 9e done 2026-10-20 (6.25). Phases 1–9e are complete, and the manual check passed 2026-10-19 after three fixes (6.23). Signature help, 9f, is next.
 
 ## Bottom line
 
@@ -337,6 +337,7 @@ So each LSP feature in the stream works through the file under the cursor. Scope
   `review::lend` readies the file's buffer, and upstream's `request_completions_from_language_server` asks from it. The savepoint stays the stream's.
 - The items keep the file's places. A row holds its file's line char for char, so an edit moves onto the stream by changing its line numbers to those of the rows that show them, in any offset encoding.
   The menu's preview and accept arms (`ui/completion.rs`) each move the item right before they turn it into a transaction, after any resolve. The menu applies it to the stream like any item, and the sync forwards it.
+  An edit whose lines aren't on rows one after another, as one over a hidden line or across a removed row, goes in at the cursor instead.
 - An item's other edits, like an import, are places in the file, usually on lines the review doesn't show.
   The accept arm takes them, and the next sync makes them in the file's buffer right after it forwards the item.
 - Preview inserts are ghost transactions: a savepoint restore, then the final edit. The sync forwards them all in order, so the source sees the preview too.
@@ -376,7 +377,7 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-term/tests/integration.rs` | 1 | `mod fork_review;` | 1 |
 | `helix-term/src/handlers/completion/request.rs` | 0 | `pub(super) mod review;`, the file's requests in `request_completions`, and the review's re-request at the top of `request_incomplete_completion_list` | 9e |
 | `helix-term/src/handlers/completion.rs` | 0 | The file's trigger characters in `trigger_auto_completion` | 9e |
-| `helix-term/src/ui/completion.rs` | 1 | The item moved onto the rows in the menu's preview arm and accept arm, and one import | 9e |
+| `helix-term/src/ui/completion.rs` | 1 | The item moved onto the rows in the menu's preview arm and accept arm | 9e |
 | `helix-term/src/handlers/signature_help.rs` | 1 | `mod review;`, the lend at the top of `request_signature_help`, and the file's trigger characters in the insert hook | 9f |
 
 Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
@@ -429,7 +430,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 9b. Diagnostics | Done | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250. Actual: about 190, plus 105 of tests. | Low |
 | 9c. Rename | Done | Rename from the stream, through its own prompt | 80–150. Actual: about 95, plus 10 of tests. | Low |
 | 9d. Completion spike | Done | A prototype of completion and signature help from the file's servers, tested against rust-analyzer (6.24) | Actual: about 400, plus 240 of tests, on the local branch `spike/review-completion` | **High**: seams inside upstream functions |
-| 9e. Completion | Planned | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350 | Medium: the order of an item and its other edits |
+| 9e. Completion | Done | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350. Actual: about 350, plus 28 in seams and 420 of tests. | Medium: the order of an item and its other edits |
 | 9f. Signature help | Planned | Signature help from the file's server, by lending the view, with its trigger characters | 60–100 | Low |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
@@ -779,6 +780,21 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
   - The first trigger character typed in a file that isn't open triggers nothing. The file loads at the sync after the key, and its server starts then.
   - Signature help lends when you enter insert mode on a row, so it loads the file then, not at the first edit.
 - The end-to-end test needs rust-analyzer, and the fixture as the working directory for the server's root. So it can't run in the parallel suite (`agents/TESTING.md`). The log line in `show_signature_help` is its only view of the popup.
+
+### 6.25 Phase 9e: found
+
+- Built from the spike's prototype, with its 7 seams, all added lines. The import in `ui/completion.rs` went: the seams name `helix_view::review` in full, as the other seams do.
+- Changed from the prototype:
+  - An edit over several lines moves only when its lines are on rows one after another. The prototype moved one across a removed row too, and the sync would have refused it. Now it goes in at the cursor, as one over a hidden line does.
+  - An accepted item's other edits leave it even when the cursor isn't on a file's row. Left on the item, upstream would make them in the stream, at the file's line numbers.
+  - The lend's check that the selection moved waits for 9f. Only signature help's hook asks again on a new selection.
+- Tests:
+  - A unit test moves edits onto rows laid out by hand: one row, two, both ranges of an insert-and-replace edit, another file's rows, and the edits that don't move.
+  - Two integration tests play the menu's part with a hand-built item: `review::accept_item`, then the item's edit made in the stream, as the accept arm does. The item's import reaches the file after the item and shows as a row, and `u` takes out both. An item the sync puts back takes its import with it.
+    Each fails with the bug it guards against, checked by hand: the import made before the item, or made though the item was put back.
+  - `fork_review/rust_analyzer.rs` is the spike's test against rust-analyzer, ignored, so the suite, `land.sh`, and upstream's CI skip it. It's the repository's first ignored test.
+    It waits for the incomplete list's answer by its new savepoint, not a sleep, so it shows the server answered the re-request. It passes in about 12 s against rust-analyzer 1.90.
+- Not covered yet, as in 6.24: snippet tabstops, an item whose edit reaches a hidden line, and the first trigger character in a file that isn't open.
 
 ## 7. Risks
 
