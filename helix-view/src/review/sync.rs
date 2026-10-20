@@ -31,7 +31,7 @@ pub fn sync(editor: &mut Editor, completing: bool) {
     let taken = take_edits(editor, doc_id);
     complete::make_deferred(editor, matches!(taken, Some(Err(_))));
     let mut moved = taken.is_some();
-    // WHY: a completion's preview restores a savepoint, which reverts every
+    // WHY: accepting a completion restores a savepoint, which reverts every
     // edit since, a relayout too. A removed row it brought back would read as
     // text inserted into the file. The rows wait until the menu closes.
     if !completing {

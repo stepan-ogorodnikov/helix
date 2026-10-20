@@ -131,6 +131,9 @@ impl Completion {
 
     pub fn new(editor: &Editor, items: Vec<CompletionItem>, trigger_offset: usize) -> Self {
         let preview_completion_insert = editor.config().preview_completion_insert;
+        // FORK: review-stream
+        let preview_completion_insert =
+            preview_completion_insert && helix_view::review::previews_completion(editor);
         let replace_mode = editor.config().completion_replace;
 
         let dir_style = editor.theme.get("ui.text.directory");
@@ -183,16 +186,6 @@ impl Completion {
 
                     match item {
                         CompletionItem::Lsp(item) => {
-                            // FORK: review-stream
-                            let item = &LspCompletionItem {
-                                item: helix_view::review::item_on_rows(
-                                    &editor.review,
-                                    doc,
-                                    view.id,
-                                    &item.item,
-                                ),
-                                ..item.clone()
-                            };
                             let (transaction, _) = lsp_item_to_transaction(
                                 doc,
                                 view.id,

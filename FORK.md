@@ -107,7 +107,7 @@ The hooks run on commit.
   `goto_definition`, `goto_declaration`, `goto_type_definition`, `goto_implementation`, `goto_reference`, `hover`, and `code_action` in the review ask the language server of the row's file, at the same place in it.
   `rename_symbol` in the review opens the review's own prompt, and the rename is a step of the review's undo log.
   Each file's diagnostics show on its rows, from its buffer, or from what its servers reported when it isn't open.
-  Completion in the review offers the items of the row's file's language servers and opens on their trigger characters. An item's other edits, like an import, go to the file after the item, in the same undo step. Signature help in the review asks the row's file's language server, and opens on its trigger characters.
+  Completion in the review offers the items of the row's file's language servers and opens on their trigger characters. Selecting an item there doesn't preview it in the text. An item's other edits, like an import, go to the file after the item, in the same undo step. Signature help in the review asks the row's file's language server, and opens on its trigger characters.
   `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.
@@ -129,7 +129,7 @@ The hooks run on commit.
   - `helix-term/src/handlers/completion/request.rs`: `pub(super) mod review;`, the review's requests in `request_completions`, and the review's own re-request at the top of `request_incomplete_completion_list`.
     `request/review.rs` calls the private `request_completions_from_language_server`, and copies the completion context `request_completions` builds inline. A rebase that changes either updates it.
   - `helix-term/src/handlers/completion.rs`: the file's trigger characters in `trigger_auto_completion`.
-  - `helix-term/src/ui/completion.rs`: `review::item_on_rows` in the menu's preview arm, `review::accept_item` in its accept arm, and their import. A rebase that changes how either arm turns an item into a transaction rereads them.
+  - `helix-term/src/ui/completion.rs`: previews off for the review in `Completion::new`, and `review::accept_item` in the menu's accept arm. A rebase that changes how the accept arm turns an item into a transaction rereads them.
   - `helix-term/src/handlers/signature_help.rs`: `mod review;`, the lend at the top of `request_signature_help`, and the file's trigger characters in `signature_help_post_insert_char_hook`.
     The lend relies on `request_signature_help` reading the focused buffer only before its request goes out. A rebase that changes that rereads it.
   - `helix-term/src/commands/typed.rs`: the `:review`, `:review-refresh`, `:review-restore`, `:review-context`, `:stage-hunk`, and `:unstage-hunk` rows, `mod review_write;`, and the seam at the top of `write_impl` that sends `:w` in the review to `typed/review_write.rs`.

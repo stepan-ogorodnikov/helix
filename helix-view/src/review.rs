@@ -34,7 +34,7 @@ mod sync;
 mod syntax;
 mod words;
 
-pub use complete::{accept_item, file_at_cursor, item_on_rows};
+pub use complete::{accept_item, file_at_cursor, previews_completion};
 pub use lend::lend;
 pub use log::{log_step, redo, undo};
 pub use sync::{load, sync};

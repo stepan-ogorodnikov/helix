@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9f done 2026-10-20 (6.26). Phases 1–9f are complete. The manual check passed 2026-10-19 after three fixes (6.23), and completion and signature help, 9e–9f, wait for theirs.
+Status: phase 9f done 2026-10-20 (6.26). Phases 1–9f are complete, and the manual check passed 2026-10-19 after three fixes (6.23). The check of 9e–9f found a bug, now fixed, and goes on (6.27).
 
 ## Bottom line
 
@@ -236,7 +236,7 @@ The new row is an insert before the cursor's line, so the cursor stays on the te
 Change an added line back to the base text, and its removed twin vanishes.
 
 **Completion.** Word and path completion work in any buffer, the stream included.
-A completion's preview restores a savepoint first, which reverts every edit since, the stream's relayouts too.
+Accepting a completion restores a savepoint first, which reverts every edit since, the stream's relayouts too.
 A reverted removed row would come back as text inserted into a run, and be forwarded into the file.
 So while a completion menu is open in the stream, the sync forwards edits and maps rows, but holds the reconcile until the menu closes.
 The seams pass whether a menu is open, from `EditorView::completion`.
@@ -336,11 +336,11 @@ So each LSP feature in the stream works through the file under the cursor. Scope
 - The requests: a seam in `request_completions` adds the servers of the file under the cursor to the stream's own word and path completion.
   `review::lend` readies the file's buffer, and upstream's `request_completions_from_language_server` asks from it. The savepoint stays the stream's.
 - The items keep the file's places. A row holds its file's line char for char, so an edit moves onto the stream by changing its line numbers to those of the rows that show them, in any offset encoding.
-  The menu's preview and accept arms (`ui/completion.rs`) each move the item right before they turn it into a transaction, after any resolve. The menu applies it to the stream like any item, and the sync forwards it.
+  The menu's accept arm (`ui/completion.rs`) moves the item right before it turns it into a transaction, after any resolve. The menu applies it to the stream like any item, and the sync forwards it.
   An edit whose lines aren't on rows one after another, as one over a hidden line or across a removed row, goes in at the cursor instead.
 - An item's other edits, like an import, are places in the file, usually on lines the review doesn't show.
   The accept arm takes them, and the next sync makes them in the file's buffer right after it forwards the item.
-- Preview inserts are ghost transactions: a savepoint restore, then the final edit. The sync forwards them all in order, so the source sees the preview too.
+- The review previews no item: selecting one leaves the text alone, as upstream's `preview-completion-insert = false` does. The sync would forward a preview to the file as an ordinary edit, and its server would then resolve items against text that holds it (6.27).
 - Typing into an open menu asks again for an incomplete list, through a seam at the top of `request_incomplete_completion_list`.
   That runs inside the key, before the frame's sync has forwarded the char, so it runs the sync first, held as under a menu.
 - Signature help lends the view inside `request_signature_help`. Its answer reads only the focused buffer's language.
@@ -351,6 +351,7 @@ Rejected:
 - Lending the view for completion. Its answer arrives after the view shows the stream again.
   Goto and hover answer late too, but their answers don't read the buffer they asked from.
 - Rewriting an item's line numbers when the answer arrives. A resolve can answer with the file's places again (6.24).
+- Holding a preview back from the file until the menu accepts or drops the item. While held, the stream's text can have lines its rows don't, and the drawing code reads rows by line (6.27).
 
 ## 4. Upstream seams
 
@@ -377,7 +378,7 @@ One or two lines each, marked `// FORK:`. Commit counts are on upstream `master`
 | `helix-term/tests/integration.rs` | 1 | `mod fork_review;` | 1 |
 | `helix-term/src/handlers/completion/request.rs` | 0 | `pub(super) mod review;`, the file's requests in `request_completions`, and the review's re-request at the top of `request_incomplete_completion_list` | 9e |
 | `helix-term/src/handlers/completion.rs` | 0 | The file's trigger characters in `trigger_auto_completion` | 9e |
-| `helix-term/src/ui/completion.rs` | 1 | The item moved onto the rows in the menu's preview arm and accept arm | 9e |
+| `helix-term/src/ui/completion.rs` | 1 | Previews off for the review in `Completion::new`, and the item moved onto the rows in the accept arm | 9e |
 | `helix-term/src/handlers/signature_help.rs` | 1 | `mod review;`, the lend at the top of `request_signature_help`, and the file's trigger characters in the insert hook | 9f |
 
 Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
@@ -771,7 +772,7 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
   - A lend from a job, as a completion request's, can run before the sync has forwarded the last edit, when the rows don't show the stream's text. The lend refuses then. 9a's commands never meet it, since the sync at the start of `handle_event` runs first.
   - The re-request for an incomplete list runs inside the key that typed the char, before the frame's sync. It runs the sync itself, held as under a menu, then lends.
 - Left as upstream has it:
-  - A preview reaches the file's server. Upstream keeps a preview from the server as a ghost transaction. The sync forwards it as an ordinary edit, so the file's buffer and its server stay in step, as with word completion since 7a.
+  - A preview reaches the file's server. Upstream keeps a preview from the server as a ghost transaction. The sync forwards it as an ordinary edit, so the file's buffer and its server stay in step, as with word completion since 7a. That was wrong: it broke resolves (6.27).
   - The docs popup and the signature popup aren't highlighted. Both read the focused buffer's language, which is the stream's, and it has none. One seam each would fix it (8).
   - With several cursors, an item goes in at every cursor, as upstream does. A cursor on another file's row edits that file.
 - Not tested:
@@ -807,6 +808,20 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
   It runs under a 10 s timeout, since the loop never goes idle. With the check taken out, it fails with `signature help kept asking`, checked by hand.
 - The popup isn't reachable from tests, since `Application`'s compositor is private. The rust-analyzer test leaves it to the manual check.
 - Left as 6.24 has it: the signature shows without highlights, and entering insert mode on a row loads its file.
+
+### 6.27 The check of 9e–9f: found
+
+Begun 2026-10-20, from the setup in the hand-back, with a replay of its steps through the harness against rust-analyzer.
+
+- The docs popup never opened, and `Syntax error: expected SEMICOLON` showed beside a selected item.
+  - The sync forwarded the menu's preview of the selected item to the file's buffer as an ordinary edit, so rust-analyzer got it. Upstream keeps a preview from the server.
+  - rust-analyzer resolves an item, for its docs, by computing it again from the file's text. With the preview in that text, its answer for `grow` came back with no details, and with its edit's range shrunk to nothing. The accept still landed, only because the menu's restore put the text back where the request was made.
+  - The syntax error was rust-analyzer's, on the previewed `s.area()` with no `;` after it.
+- Fixed, as the human chose: the review previews no item, with upstream's `preview-completion-insert` turned off there. One seam in `Completion::new` does it, and the preview arm's seam went, so 9e keeps 7.
+  The integration test that selects a path completion now checks that neither the file nor the review changes before the accept. With previews back on, it fails.
+  In a second replay, the resolve came back with the item's details, and rust-analyzer got only the typed text.
+- The spike called a preview reaching the server harmless (6.24). No test could see otherwise: the popup isn't reachable from tests, and the replay's accepts happened to land right.
+- The hand-back's steps, not the code: rust-analyzer lists far more items after `s.` than they said, its postfix snippets and trait methods too, as in a file. It also writes `Cargo.lock` into a crate that has none, so the setup now generates one before the commit.
 
 ## 7. Risks
 

@@ -3,8 +3,8 @@
 //!
 //! The requests go out from the file's buffer, with the stream's savepoint.
 //! The items keep the file's places: the menu moves one onto the stream's rows
-//! as it previews or accepts it (`review::item_on_rows`), since a resolve can
-//! answer with the file's places again. The sync then forwards it to the file.
+//! as it accepts it (`review::accept_item`), since a resolve can answer with
+//! the file's places again. The sync then forwards it to the file.
 
 use std::collections::HashSet;
 use std::sync::Arc;

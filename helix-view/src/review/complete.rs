@@ -40,18 +40,14 @@ fn file_on(stream: &Stream, row: usize) -> Option<usize> {
     }
 }
 
-/// `item`, with its edit on the stream's rows when `doc` is the stream.
-pub fn item_on_rows(
-    review: &Review,
-    doc: &Document,
-    view: ViewId,
-    item: &lsp::CompletionItem,
-) -> lsp::CompletionItem {
-    let mut item = item.clone();
-    if let Some(stream) = review.stream_of(doc.id()) {
-        to_rows(stream, cursor_row(doc, view), &mut item);
-    }
-    item
+/// Whether the completion menu previews a selected item in the text. Not in
+/// the review: the sync would forward the preview to the file, and its server
+/// would then resolve items against text that holds it.
+pub fn previews_completion(editor: &Editor) -> bool {
+    editor
+        .review
+        .stream_of(editor.tree.get(editor.tree.focus).doc)
+        .is_none()
 }
 
 /// Moves an item being accepted onto the stream's rows when `doc` is the

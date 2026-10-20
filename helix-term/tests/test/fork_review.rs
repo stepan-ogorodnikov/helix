@@ -659,6 +659,7 @@ async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
     let mut app = app_on(file.clone())?;
     start_review(&mut app).await?;
     let completed = format!("{line}only.txt\nnew\n");
+    let review = review_of(&file, &format!("{line}\nold\nnew\n"));
 
     test_key_sequences(
         &mut app,
@@ -667,7 +668,12 @@ async fn a_completion_in_a_row_reaches_the_file_once() -> anyhow::Result<()> {
             (
                 Some("<C-n>"),
                 Some(&|app| {
-                    assert_eq!(buffer_text(app, &file), Some(completed.clone()));
+                    assert_eq!(
+                        buffer_text(app, &file),
+                        Some(format!("{line}\nnew\n")),
+                        "a selected item isn't previewed, so it doesn't reach the file"
+                    );
+                    assert_eq!(stream_text(app), review);
                 }),
             ),
             (
