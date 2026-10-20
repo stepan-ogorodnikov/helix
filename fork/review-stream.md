@@ -5,8 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: the 9d spike done 2026-10-20. Phases 1–9c are complete, and the manual check passed 2026-10-19 after three fixes (6.23).
-The spike's prototype gives the review completion and signature help from the file's language servers, with 7 seams inside upstream functions (6.24). Whether to build them, as 9e and 9f, is open (8).
+Status: completion and signature help planned 2026-10-20, as 9e and 9f, from the 9d spike (6.24). Phases 1–9d are complete, and the manual check passed 2026-10-19 after three fixes (6.23).
 
 ## Bottom line
 
@@ -430,8 +429,8 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 9b. Diagnostics | Done | Each file's diagnostics on its rows, open or not, with the gutter's dot | 150–250. Actual: about 190, plus 105 of tests. | Low |
 | 9c. Rename | Done | Rename from the stream, through its own prompt | 80–150. Actual: about 95, plus 10 of tests. | Low |
 | 9d. Completion spike | Done | A prototype of completion and signature help from the file's servers, tested against rust-analyzer (6.24) | Actual: about 400, plus 240 of tests, on the local branch `spike/review-completion` | **High**: seams inside upstream functions |
-| 9e. Completion | Proposed (8) | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350 | Medium: the order of an item and its other edits |
-| 9f. Signature help | Proposed (8) | Signature help from the file's server, by lending the view, with its trigger characters | 60–100 | Low |
+| 9e. Completion | Planned | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350 | Medium: the order of an item and its other edits |
+| 9f. Signature help | Planned | Signature help from the file's server, by lending the view, with its trigger characters | 60–100 | Low |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
 Each later phase adds to it. Phase 2 comes second because it's the riskiest phase that the read-only review needs, and phase 7 reuses its reconcile.
@@ -802,13 +801,15 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
 
 ## 8. Open decisions
 
-Raised by the 9d spike, 2026-10-20 (6.24):
+None.
 
-- **Build completion and signature help?** Recommended: yes, as 9e then 9f. 9e is the riskier, and 9f needs only the lend.
-- **The trigger-character seams.** Recommended: both. Without them, `.` opens no menu until two word chars follow, and `(` opens no signature help.
-- **Tests.** Recommended: unit tests for moving an item onto the rows and for the deferred edits, plus the spike's end-to-end test kept off the suite and run again at the manual check.
-  The other way is a fake language server, a test script that answers completion and signature help, for integration tests in the suite. No such harness exists upstream.
-- **Highlighting the popups.** Two more seams, in `Completion::render` and `show_signature_help`, would highlight the docs and the signature in the file's language. Recommended: leave them out.
+Decided, 2026-10-20, from the 9d spike (6.24):
+
+- **Completion and signature help get built**, as 9e then 9f. 9e is the riskier, and 9f needs only the lend.
+- **Both trigger-character seams go in.** Without them, `.` opens no menu until two word chars follow, and `(` opens no signature help.
+- **Tests:** tests without a language server for moving an item onto the rows and for its other edits, plus the spike's end-to-end test against rust-analyzer, kept out of the suite and run again at the manual check.
+  No fake language server, a test script that would answer completion and signature help. Nothing like it exists upstream.
+- **The popups stay plain.** Two more seams, in `Completion::render` and `show_signature_help`, would highlight the docs and the signature in the file's language.
 
 Decided, 2026-10-19:
 
