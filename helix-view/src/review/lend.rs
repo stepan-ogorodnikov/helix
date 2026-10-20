@@ -92,7 +92,14 @@ pub fn lend(editor: &mut Editor) -> Result<DocumentId, String> {
         _ => Range::point(at(line, column)),
     };
     doc.ensure_view_init(view);
-    doc.set_selection(view, Selection::single(selection.anchor, selection.head));
+    let selection =
+        Selection::single(selection.anchor, selection.head).ensure_invariants(doc.text().slice(..));
+    // WHY: a new selection fires `SelectionDidChange`, which asks signature
+    // help again while it shows, which lends again. `set_selection` widens a
+    // point to a char, so the check compares the widened one.
+    if *doc.selection(view) != selection {
+        doc.set_selection(view, selection);
+    }
 
     // WHY: upstream's commands see only servers that are up, and would say
     // there's no definition, or no server, while one starts.

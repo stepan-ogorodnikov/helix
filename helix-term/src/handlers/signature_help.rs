@@ -20,6 +20,8 @@ use crate::ui::lsp::signature_help::{Signature, SignatureHelp};
 use crate::ui::Popup;
 use crate::{job, ui};
 
+mod review; // FORK: review-stream
+
 #[derive(Debug, PartialEq, Eq)]
 enum State {
     Open,
@@ -104,6 +106,10 @@ pub fn request_signature_help(
     invoked: SignatureHelpInvoked,
     cancel: TaskHandle,
 ) {
+    // FORK: review-stream
+    if review::lend(editor, invoked, &cancel) {
+        return;
+    }
     let (view, doc) = current!(editor);
 
     // TODO merge multiple language server signature help into one instead of just taking the first language server that supports it
@@ -293,6 +299,10 @@ fn signature_help_post_insert_char_hook(
     PostInsertChar { cx, .. }: &mut PostInsertChar<'_, '_>,
 ) -> anyhow::Result<()> {
     if !cx.editor.config().lsp.auto_signature_help {
+        return Ok(());
+    }
+    // FORK: review-stream
+    if review::trigger(cx.editor, tx) {
         return Ok(());
     }
     let (view, doc) = current!(cx.editor);

@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9e done 2026-10-20 (6.25). Phases 1–9e are complete, and the manual check passed 2026-10-19 after three fixes (6.23). Signature help, 9f, is next.
+Status: phase 9f done 2026-10-20 (6.26). Phases 1–9f are complete. The manual check passed 2026-10-19 after three fixes (6.23), and completion and signature help, 9e–9f, wait for theirs.
 
 ## Bottom line
 
@@ -431,7 +431,7 @@ Not touched: `document.rs` (16/yr), `application.rs` (18/yr), `helix-core`.
 | 9c. Rename | Done | Rename from the stream, through its own prompt | 80–150. Actual: about 95, plus 10 of tests. | Low |
 | 9d. Completion spike | Done | A prototype of completion and signature help from the file's servers, tested against rust-analyzer (6.24) | Actual: about 400, plus 240 of tests, on the local branch `spike/review-completion` | **High**: seams inside upstream functions |
 | 9e. Completion | Done | Completion from the servers of the file under the cursor: requests, re-requests, trigger characters, items moved onto the rows, and their other edits made in the file | 250–350. Actual: about 350, plus 28 in seams and 420 of tests. | Medium: the order of an item and its other edits |
-| 9f. Signature help | Planned | Signature help from the file's server, by lending the view, with its trigger characters | 60–100 | Low |
+| 9f. Signature help | Done | Signature help from the file's server, by lending the view, with its trigger characters | 60–100. Actual: about 80, plus 10 in seams and 60 of tests. | Low |
 
 Phase 1 alone is a usable review: every hunk in one buffer, read-only editor features over it, and `enter` to edit.
 Each later phase adds to it. Phase 2 comes second because it's the riskiest phase that the read-only review needs, and phase 7 reuses its reconcile.
@@ -795,6 +795,18 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
   - `fork_review/rust_analyzer.rs` is the spike's test against rust-analyzer, ignored, so the suite, `land.sh`, and upstream's CI skip it. It's the repository's first ignored test.
     It waits for the incomplete list's answer by its new savepoint, not a sleep, so it shows the server answered the re-request. It passes in about 12 s against rust-analyzer 1.90.
 - Not covered yet, as in 6.24: snippet tabstops, an item whose edit reaches a hidden line, and the first trigger character in a file that isn't open.
+
+### 6.26 Phase 9f: found
+
+- Built from the spike's prototype, with its 3 seams in `signature_help.rs`, all added lines. The spike's log line in `show_signature_help` went.
+- The lend's selection check came with it: the lend sets the file's selection only when it moves (6.24).
+  The loop it stops needs no server. With none, a request leaves the handler pending, so the `SelectionDidChange` from the lend's new selection asks again. Without the check, every insert in the review would ask forever.
+- A refused lend closes signature help through upstream's `show_signature_help` with no answer. The handler then stops waiting, and a signature from where the cursor was doesn't stay up.
+- Tests: one integration test, with a key bound to `signature_help` in insert mode, since no default key has it.
+  On a removed row it gives the review's refusal. On an added row it loads the file in the background and gives upstream's answer for no server.
+  It runs under a 10 s timeout, since the loop never goes idle. With the check taken out, it fails with `signature help kept asking`, checked by hand.
+- The popup isn't reachable from tests, since `Application`'s compositor is private. The rust-analyzer test leaves it to the manual check.
+- Left as 6.24 has it: the signature shows without highlights, and entering insert mode on a row loads its file.
 
 ## 7. Risks
 

@@ -1177,6 +1177,68 @@ async fn lsp_keys_in_the_review_ask_from_the_rows_file() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn signature_help_in_the_review_asks_from_the_rows_file() -> anyhow::Result<()> {
+    use helix_core::hashmap;
+    use helix_term::keymap;
+
+    let repo = three_hunks();
+    let b = repo.path().join("b.txt");
+    let mut config = test_config();
+    config.keys = hashmap! {
+        Mode::Insert => keymap!({ "Insert mode"
+            "F2" => signature_help,
+        }),
+    };
+    let mut app = AppBuilder::new()
+        .with_config(config)
+        .with_file(repo.path().join("a.txt"), None)
+        .build()?;
+    start_review(&mut app).await?;
+
+    // WHY: a lend that moves the file's selection asks signature help again,
+    // and the loop would never go idle.
+    let keys = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        test_key_sequences(
+            &mut app,
+            vec![
+                (
+                    Some("/^b$<ret>i<F2>"),
+                    Some(&|app| {
+                        assert_eq!(
+                            status(app),
+                            "The cursor isn't on an added or unchanged line"
+                        );
+                        assert!(app.editor.document_by_path(&b).is_none());
+                    }),
+                ),
+                (
+                    Some("<esc>ji<F2>"),
+                    Some(&|app| {
+                        assert!(in_stream(app), "the view shows the review again");
+                        let file = app.editor.document_by_path(&b).expect("loaded to ask from");
+                        assert!(
+                            app.editor
+                                .tree
+                                .views()
+                                .all(|(view, _)| view.doc != file.id()),
+                            "in the background"
+                        );
+                        assert_eq!(
+                            status(app),
+                            "No configured language server supports signature-help"
+                        );
+                    }),
+                ),
+            ],
+            false,
+        ),
+    )
+    .await;
+    keys.map_err(|_| anyhow::anyhow!("signature help kept asking"))?
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn lsp_keys_in_the_review_need_a_line_the_file_has() -> anyhow::Result<()> {
     let repo = three_hunks();
     let b = repo.path().join("b.txt");

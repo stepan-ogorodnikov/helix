@@ -98,7 +98,7 @@ The hooks run on commit.
 
 ### review-stream
 
-- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, code actions, and rename from it, and its files' diagnostics, phases 9a–9c, are done. The completion spike, 9d, is done: its prototype is on the local branch `spike/review-completion`, which is never pushed. Completion from the files' language servers, 9e, is done. Signature help, 9f, is planned.
+- Status: active. The read-only review, phases 1–6 of `fork/review-stream.md`, is done. Editing in the review, phase 7, is done. Undo and saving in the review, phase 8, are done. Goto, references, hover, code actions, and rename from it, and its files' diagnostics, phases 9a–9c, are done. The completion spike, 9d, is done: its prototype is on the local branch `spike/review-completion`, which is never pushed. Completion and signature help from the files' language servers, 9e and 9f, are done.
 - Plan: `fork/review-stream.md`.
 - Adds: `:review` shows every changed file's hunks against `HEAD` in one buffer, or with `unstaged` or `staged` against the index, with old and new line numbers and `+`/`-` signs in the gutter.
   An edit to added or unchanged lines, new and deleted lines too, goes to the file's buffer as you type, loaded in the background if need be and closed with the review once saved, and the rows follow it. New lines and indents are the file's own. Any other edit is put back, and a staged review takes none.
@@ -107,7 +107,7 @@ The hooks run on commit.
   `goto_definition`, `goto_declaration`, `goto_type_definition`, `goto_implementation`, `goto_reference`, `hover`, and `code_action` in the review ask the language server of the row's file, at the same place in it.
   `rename_symbol` in the review opens the review's own prompt, and the rename is a step of the review's undo log.
   Each file's diagnostics show on its rows, from its buffer, or from what its servers reported when it isn't open.
-  Completion in the review offers the items of the row's file's language servers and opens on their trigger characters. An item's other edits, like an import, go to the file after the item, in the same undo step.
+  Completion in the review offers the items of the row's file's language servers and opens on their trigger characters. An item's other edits, like an import, go to the file after the item, in the same undo step. Signature help in the review asks the row's file's language server, and opens on its trigger characters.
   `Enter` in it (`review_open`) opens the row's file at that line, and `Ctrl-o` comes back. On a row of unchanged lines, `Enter` shows them.
   An edit to a file's buffer shows in the review, with the cursor kept on its line. With a review open, `:review` switches to it, and `:review-refresh` lists and reads the changes again.
   In the review, `goto_next_change` and the other change motions select the review's hunks across files, on whatever keys they're bound to, and `]F`/`[F` go between files.
@@ -130,6 +130,8 @@ The hooks run on commit.
     `request/review.rs` calls the private `request_completions_from_language_server`, and copies the completion context `request_completions` builds inline. A rebase that changes either updates it.
   - `helix-term/src/handlers/completion.rs`: the file's trigger characters in `trigger_auto_completion`.
   - `helix-term/src/ui/completion.rs`: `review::item_on_rows` in the menu's preview arm, `review::accept_item` in its accept arm, and their import. A rebase that changes how either arm turns an item into a transaction rereads them.
+  - `helix-term/src/handlers/signature_help.rs`: `mod review;`, the lend at the top of `request_signature_help`, and the file's trigger characters in `signature_help_post_insert_char_hook`.
+    The lend relies on `request_signature_help` reading the focused buffer only before its request goes out. A rebase that changes that rereads it.
   - `helix-term/src/commands/typed.rs`: the `:review`, `:review-refresh`, `:review-restore`, `:review-context`, `:stage-hunk`, and `:unstage-hunk` rows, `mod review_write;`, and the seam at the top of `write_impl` that sends `:w` in the review to `typed/review_write.rs`.
     That module copies `write_all_impl`'s save chain. A rebase that changes the chain updates the copy.
   - `helix-term/src/keymap.rs`: `pub mod review;`.
@@ -138,7 +140,7 @@ The hooks run on commit.
   - `helix-term/src/ui/picker.rs`: the `on_review_jump` hook, its builder, and its key arm, next to `changed-files-views`' `on_cycle_changes`.
   - Fork files of other features: `helix-view/src/editor/picker_keys.rs` (`picker-keys`) gets `ReviewJump` and its `Alt-r` default, and `helix-term/src/commands/changed_file.rs` (`changed-files-views`) sets the hook.
   - `book/src/keymap.md` (Review), `book/src/themes.md` (the review's scopes), `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
-- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,forward,gutter,diagnostics,lend,log,sync,syntax,words,complete}.rs`, `helix-term/src/commands/review.rs` and `review/{lsp,stage,restore}.rs`, `helix-term/src/handlers/completion/request/review.rs`, `helix-term/src/commands/typed/review_write.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs` and `fork_review/rust_analyzer.rs`.
+- Fork-owned: `helix-view/src/review.rs` and `review/{layout,reconcile,forward,gutter,diagnostics,lend,log,sync,syntax,words,complete}.rs`, `helix-term/src/commands/review.rs` and `review/{lsp,stage,restore}.rs`, `helix-term/src/handlers/completion/request/review.rs`, `helix-term/src/handlers/signature_help/review.rs`, `helix-term/src/commands/typed/review_write.rs`, `helix-term/src/keymap/review.rs`, `helix-term/src/ui/text_decorations/review.rs`, `helix-vcs/src/git/index.rs` and the `helix-vcs/src/index.rs` facade, `helix-term/tests/test/fork_review.rs` and `fork_review/rust_analyzer.rs`.
 - Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/forward.rs`, `review/syntax.rs`, `review/words.rs`, `review/complete.rs`, `helix-vcs/src/git/index.rs`, and `commands/review/stage.rs`. Integration tests in `fork_review.rs` over a temporary git repository. `fork_review/rust_analyzer.rs` runs completion against rust-analyzer. It's ignored, since it changes the working directory, and runs alone at a manual check: `cargo integration-test -- --ignored rust_analyzer --test-threads=1`.
 - Upstream refs: #15611 (multibuffer prototype), #15631 (side-by-side diff viewer, open), whose `diff.*.view` scopes phase 4 uses.
   #9951 and #16252 rewrite the diff-base code in `git.rs` and `lib.rs`. Both open.
