@@ -5,7 +5,7 @@ Reference views: Hunk's unified layout ([hunk.dev](https://www.hunk.dev/)), Zed'
 Supersedes the diff review plan. Its code never reached the rebuilt `fork`.
 Its plan and code stay under the local tag `archive/diff-review` (6.1).
 
-Status: phase 9f done 2026-10-20 (6.26). Phases 1–9f are complete, and the manual check passed 2026-10-19 after three fixes (6.23). The check of 9e–9f found a bug, now fixed, and goes on (6.27).
+Status: phase 9f done 2026-10-20 (6.26). Phases 1–9f are complete. The manual check of phases 1–9c passed 2026-10-19 after three fixes (6.23), and the check of 9e–9f passed 2026-10-20 after one (6.27).
 
 ## Bottom line
 
@@ -811,8 +811,11 @@ Spiked 2026-10-19 as a prototype on the local branch `spike/review-completion` (
 
 ### 6.27 The check of 9e–9f: found
 
-Begun 2026-10-20, from the setup in the hand-back, with a replay of its steps through the harness against rust-analyzer.
+Checked 2026-10-20, from the setup in the hand-back, with a replay of its steps through the harness against rust-analyzer.
 
+- It passed after one fix.
+  The replay covered every step it can see: rust-analyzer's menu after `.`, a snippet accepted and `Tab` past it, `:w`, an import shown as a row and taken out with its item by `u`, and signature help answering without asking again.
+  The human checked what only the screen shows: no preview in the line, and the docs popup and the signature popup, both in plain text.
 - The docs popup never opened, and `Syntax error: expected SEMICOLON` showed beside a selected item.
   - The sync forwarded the menu's preview of the selected item to the file's buffer as an ordinary edit, so rust-analyzer got it. Upstream keeps a preview from the server.
   - rust-analyzer resolves an item, for its docs, by computing it again from the file's text. With the preview in that text, its answer for `grow` came back with no details, and with its edit's range shrunk to nothing. The accept still landed, only because the menu's restore put the text back where the request was made.
