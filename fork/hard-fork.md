@@ -3,6 +3,8 @@
 Snapshot: `fork` at `00978fad`, on upstream `master` at `ba40e547` (2026-09-29).
 Upstream had nothing newer on 2026-10-22, so the fork starts current and needs no last rebase.
 
+Status: items 0–6 are committed. Item 2's steps on GitHub wait for the human's go.
+
 ## Bottom line
 
 - Stop rebasing onto upstream. `fork` becomes `main`, the default branch here and on GitHub, and `master` goes away.
@@ -62,7 +64,7 @@ Each item is one commit. Items 0–2 carry `Patch: fork-infra`, since the traile
 | 3 | Done | Rewrite the rules for a hard fork. | `AGENTS.md` (Fork and Hooks become a short Code section), `HELIX.md` (Comments, Change discipline), `TESTING.md` (test homes, upstream tests are ours), `REVIEW.md` (Blocking, Noise), `VERIFY.md` wording. `AGENTS.md` (Plans): done plans are history, and their rules may be stale. The `align-message` ruling loses "though fork features are otherwise opt-in". |
 | 4 | Done | Replace the rebase playbook with a cherry-pick guide. | `agents/UPSTREAM.md`, delete `agents/REBASE.md`, the guide list in `AGENTS.md`, and the `rerere` line in `FORK.md` (Setup). |
 | 5 | Done | Turn the patch ledger into a feature list. | `FORK.md`: each entry keeps what it adds, where it lives, what upstream code it copies or relies on, and its rulings. "Status", "Upstream files", "Upstream refs", "Drop when", and the Gaps about markers go. `AGENTS.md` (Ledger) and `REVIEW.md`'s anchors follow. |
-| 6 | | Remove the FORK markers and the fork_ test prefix. | 57 marker lines in 25 files. Bare marker lines go, and `//! FORK: <slug>.` doc lines keep their text. `fork_review.rs`, `fork_review/`, and `fork_statusline.rs` lose the prefix, with their `mod` lines. |
+| 6 | Done | Remove the FORK markers and the fork_ test prefix. | 57 marker lines in 25 files. Bare marker lines go, and `//! FORK: <slug>.` doc lines keep their text. `fork_review.rs`, `fork_review/`, and `fork_statusline.rs` lose the prefix, with their `mod` lines. |
 
 Item 2 is the one with outward steps, so it goes as early as item 1 allows.
 Item 6 is the only one that touches Rust, and it's mechanical.
@@ -108,3 +110,5 @@ The human approved the plan with the answer it assumed to each question.
   `picker-keys`' ruling that the key table lives outside `editor.rs` went. It only followed from the hot-file rule.
   The `Editor::switch` condition's ruling became a line under Code. It called the condition the one seam in a hot-file function, and only why it exists still holds.
   `AGENTS.md`'s Ledger section is now Features, and says a fix or a cleanup needs no entry. Without the trailer, no commit needs one.
+- Item 6: the 57 markers were 44 comment lines, 7 trailing comments on `mod` lines, and 6 `//!` prefixes. Three carried a note instead of a slug, like `// FORK: picker key table.`, and went too.
+  The renamed test modules collide with nothing, and rustfmt sorted their `mod` lines. `cargo integration-test -- review statusline` ran 47 tests, with the rust-analyzer one ignored as before.

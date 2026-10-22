@@ -1,4 +1,4 @@
-//! FORK: review-stream. Signature help in the review, from the language
+//! Signature help in the review, from the language
 //! server of the file under the cursor. The request lends the view to the
 //! file's buffer, as goto does (`commands/review/lsp.rs`). The answer reads
 //! only the focused buffer's language, for the popup's highlights. That's the

@@ -54,7 +54,6 @@ pub fn diagnostic<'doc>(
     theme: &Theme,
     _is_focused: bool,
 ) -> GutterFn<'doc> {
-    // FORK: review-stream
     if let Some(dots) = crate::review::gutter::diagnostics(_editor, doc, theme) {
         return dots;
     }
@@ -100,7 +99,6 @@ pub fn diff<'doc>(
     theme: &Theme,
     _is_focused: bool,
 ) -> GutterFn<'doc> {
-    // FORK: review-stream
     if let Some(signs) = crate::review::gutter::signs(_editor, doc, theme) {
         return signs;
     }
@@ -156,7 +154,6 @@ pub fn line_numbers<'doc>(
     theme: &Theme,
     is_focused: bool,
 ) -> GutterFn<'doc> {
-    // FORK: review-stream
     if let Some(numbers) = crate::review::gutter::line_numbers(editor, doc, theme, is_focused) {
         return numbers;
     }

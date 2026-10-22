@@ -201,7 +201,6 @@ pub(super) fn changed_file_picker(cx: &mut Context) {
         }
         picker.set_status_label(lists.mode.label());
     });
-    // FORK: review-stream
     let picker = picker.with_on_review_jump(move |cx, change: &FileChange| {
         let scope = lists_for_review.lock().unwrap().mode;
         super::review::jump(cx, scope, change.path());

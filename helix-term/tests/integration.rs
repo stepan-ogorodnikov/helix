@@ -18,10 +18,8 @@ mod test {
     mod auto_pairs;
     mod command_line;
     mod commands;
-    // FORK: review-stream
-    mod fork_review;
-    // FORK: align-message
-    mod fork_statusline;
     mod movement;
+    mod review;
     mod splits;
+    mod statusline;
 }

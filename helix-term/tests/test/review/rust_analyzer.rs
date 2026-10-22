@@ -1,4 +1,4 @@
-//! FORK: review-stream. Completion in the review against rust-analyzer, which
+//! Completion in the review against rust-analyzer, which
 //! has to be on the `PATH`. The fixture is the working directory, as the
 //! server's root, so the test is ignored and runs alone, at the review's
 //! manual check:

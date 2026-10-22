@@ -44,7 +44,6 @@ pub struct EditorView {
     spinners: ProgressSpinners,
     /// Tracks if the terminal window is focused by reaction to terminal focus events
     terminal_focused: bool,
-    // FORK: review-stream
     review_keys: crate::keymap::review::ReviewKeys,
 }
 
@@ -69,7 +68,6 @@ impl EditorView {
             completion: None,
             spinners: ProgressSpinners::default(),
             terminal_focused: true,
-            // FORK: review-stream
             review_keys: Default::default(),
         }
     }
@@ -130,7 +128,6 @@ impl EditorView {
             inner.height,
             &text_annotations,
         ));
-        // FORK: review-stream
         text_decorations::review::render(editor, doc, view, theme, &mut decorations, &mut overlays);
 
         if doc
@@ -1458,7 +1455,6 @@ impl Component for EditorView {
         event: &Event,
         context: &mut crate::compositor::Context,
     ) -> EventResult {
-        // FORK: review-stream
         helix_view::review::sync(context.editor, self.completion.is_some());
         self.review_keys.swap(&mut self.keymaps, context.editor);
         let mut cx = commands::Context {
@@ -1625,7 +1621,6 @@ impl Component for EditorView {
     }
 
     fn render(&mut self, area: Rect, surface: &mut Surface, cx: &mut Context) {
-        // FORK: review-stream
         helix_view::review::sync(cx.editor, self.completion.is_some());
         // clear with background color
         surface.set_style(area, cx.editor.theme.get("ui.background"));
@@ -1666,7 +1661,6 @@ impl Component for EditorView {
 
         let key_width = 15u16; // for showing pending keys
         let mut status_msg_width = 0;
-        // FORK: align-message
         // WHY: the statusline's elements start with a space, and the message lines up with their text.
         let status_msg_indent = 1u16;
 

@@ -18,7 +18,7 @@ pub use diff::{DiffHandle, Hunk};
 
 mod status;
 
-pub mod index; // FORK: review-stream
+pub mod index;
 
 pub use status::{visible_changes, ChangeKind, ChangeView, FileChange};
 

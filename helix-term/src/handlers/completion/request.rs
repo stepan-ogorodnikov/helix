@@ -30,7 +30,7 @@ use crate::ui::editor::InsertEvent;
 
 use super::word;
 
-pub(super) mod review; // FORK: review-stream
+pub(super) mod review;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(super) enum TriggerKind {
@@ -250,7 +250,6 @@ fn request_completions(
     ) {
         requests.spawn_blocking(path_completion_request);
     }
-    // FORK: review-stream
     review::request(editor, trigger.kind, &savepoint, &mut requests);
     if let Some(word_completion_request) =
         word::completion(editor, trigger, handle.clone(), savepoint)
@@ -343,7 +342,6 @@ fn request_completions_from_language_server(
 }
 
 pub fn request_incomplete_completion_list(editor: &mut Editor, handle: TaskHandle) {
-    // FORK: review-stream
     if review::request_incomplete(editor, &handle) {
         return;
     }

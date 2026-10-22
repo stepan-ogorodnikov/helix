@@ -1,4 +1,4 @@
-//! FORK: review-stream. Completion in the review, from the language servers
+//! Completion in the review, from the language servers
 //! of the file under the cursor. The stream has none of its own.
 //!
 //! The requests go out from the file's buffer, with the stream's savepoint.

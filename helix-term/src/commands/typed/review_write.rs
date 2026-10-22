@@ -1,4 +1,4 @@
-//! FORK: review-stream. `:w` in the review writes every file it shows with
+//! `:w` in the review writes every file it shows with
 //! unsaved changes, each through upstream's chain: trims, final newline, code
 //! actions and format on save, then the save. The save's own edits are steps of
 //! the review's undo log, so `u` undoes a format first, as in a file.

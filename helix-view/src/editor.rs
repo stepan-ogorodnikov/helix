@@ -291,7 +291,6 @@ where
     Ok(chars)
 }
 
-// FORK: picker key table.
 mod picker_keys;
 pub use picker_keys::{default_picker_keys, overlay_picker_keys, PickerCommand};
 
@@ -438,7 +437,6 @@ pub struct Config {
     pub buffer_picker: BufferPickerConfig,
     /// Workspace-trust configuration.
     pub workspace_trust: WorkspaceTrustConfig,
-    // FORK: picker key table lives in picker_keys.rs.
     /// Picker bindings. Not read from `[editor]`; the term config fills this
     /// from `[keys.picker]` after merging with the defaults.
     #[serde(skip, default = "default_picker_keys")]
@@ -1353,7 +1351,6 @@ pub struct Editor {
     pub mouse_down_range: Option<Range>,
     pub cursor_cache: CursorCache,
     pub workspace_trust: WorkspaceTrust,
-    // FORK: review-stream
     pub review: crate::review::Review,
 }
 
@@ -1480,7 +1477,6 @@ impl Editor {
             cursor_cache: CursorCache::default(),
             dir_stack: VecDeque::with_capacity(DIR_STACK_CAP),
             workspace_trust,
-            // FORK: review-stream
             review: Default::default(),
         }
     }
@@ -1971,7 +1967,6 @@ impl Editor {
                     && doc.path().is_none()
                     // If the buffer we are changing to is not this buffer
                     && id != doc.id
-                    // FORK: review-stream
                     && self.review.stream_of(doc.id).is_none()
                     // Ensure the buffer is not displayed in any other splits.
                     && !self

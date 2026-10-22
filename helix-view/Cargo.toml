@@ -55,7 +55,6 @@ log = "~0.4"
 
 parking_lot.workspace = true
 thiserror.workspace = true
-# FORK: review-stream
 imara-diff = "0.2.0"
 
 kstring = "2.0"

@@ -20,7 +20,7 @@ use crate::ui::lsp::signature_help::{Signature, SignatureHelp};
 use crate::ui::Popup;
 use crate::{job, ui};
 
-mod review; // FORK: review-stream
+mod review;
 
 #[derive(Debug, PartialEq, Eq)]
 enum State {
@@ -106,7 +106,6 @@ pub fn request_signature_help(
     invoked: SignatureHelpInvoked,
     cancel: TaskHandle,
 ) {
-    // FORK: review-stream
     if review::lend(editor, invoked, &cancel) {
         return;
     }
@@ -301,7 +300,6 @@ fn signature_help_post_insert_char_hook(
     if !cx.editor.config().lsp.auto_signature_help {
         return Ok(());
     }
-    // FORK: review-stream
     if review::trigger(cx.editor, tx) {
         return Ok(());
     }

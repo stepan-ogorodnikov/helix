@@ -22,7 +22,7 @@ use crate::{ChangeKind, FileChange};
 #[cfg(test)]
 mod test;
 
-pub(crate) mod index; // FORK: review-stream
+pub(crate) mod index;
 
 #[inline]
 fn get_repo_dir(file: &Path) -> Result<&Path> {

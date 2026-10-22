@@ -1,4 +1,4 @@
-//! FORK: align-message. Where the status message is drawn.
+//! Where the status message is drawn.
 
 use helix_term::application::Application;
 

@@ -1,4 +1,4 @@
-//! FORK: review-stream. `:review` over a real repository.
+//! `:review` over a real repository.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

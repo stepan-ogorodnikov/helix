@@ -69,7 +69,7 @@ Each entry says what the feature adds, and where its code, tests, and book pages
 - Adds: the message below the statusline is drawn one column in, under the statusline's first text.
   Upstream draws it from column 0, while the statusline's elements pad themselves with a leading space.
 - Code: the indent where `render` in `helix-term/src/ui/editor.rs` draws the status message.
-- Tests: `status_message_starts_under_the_statusline_text` in `helix-term/tests/test/fork_statusline.rs` reads the drawn bottom row.
+- Tests: `status_message_starts_under_the_statusline_text` in `helix-term/tests/test/statusline.rs` reads the drawn bottom row.
   It reaches the screen through `Application::terminal_buffer`, a test-only accessor under the `integration` feature.
 - Rulings: the indent is always on, with no config key, by the human's call.
 - Gaps: the command line prompt (`:`) on the same row still starts at column 0.
@@ -115,7 +115,7 @@ Each entry says what the feature adds, and where its code, tests, and book pages
   - `helix-term/src/ui/picker.rs`: the `on_review_jump` hook, its builder, and its key arm.
     `picker_keys.rs` (`picker-keys`) has `ReviewJump` and its `Alt-r` default, and `changed_file.rs` (`changed-files-views`) sets the hook.
 - Book: `book/src/keymap.md` (Review), `book/src/themes.md` (the review's scopes), and `book/src/generated/static-cmd.md` and `typable-cmd.md`, generated.
-- Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/forward.rs`, `review/syntax.rs`, `review/words.rs`, `review/complete.rs`, `helix-vcs/src/git/index.rs`, and `commands/review/stage.rs`. Integration tests in `fork_review.rs` over a temporary git repository. `fork_review/rust_analyzer.rs` runs completion against rust-analyzer. It's ignored, since it changes the working directory, and runs alone at a manual check: `cargo integration-test -- --ignored rust_analyzer --test-threads=1`.
+- Tests: unit tests in `review.rs`, `review/layout.rs`, `review/reconcile.rs`, `review/forward.rs`, `review/syntax.rs`, `review/words.rs`, `review/complete.rs`, `helix-vcs/src/git/index.rs`, and `commands/review/stage.rs`. Integration tests in `helix-term/tests/test/review.rs` over a temporary git repository. `review/rust_analyzer.rs` runs completion against rust-analyzer. It's ignored, since it changes the working directory, and runs alone at a manual check: `cargo integration-test -- --ignored rust_analyzer --test-threads=1`.
 - Relies on:
   - `goto_*`, `hover`, and `code_action` in `helix-term/src/commands/lsp.rs` run with the view lent to the row's file. A cherry-pick that makes their answers read the focused buffer breaks that.
   - The review's rename in `commands/review/lsp.rs` follows `rename_symbol`'s request and edit, without `prepareRename`. A cherry-pick that changes them updates it.

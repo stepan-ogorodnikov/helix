@@ -133,7 +133,6 @@ pub fn trigger_auto_completion(editor: &Editor, trigger_char_only: bool) {
                         ..
                     }) if triggers.iter().any(|trigger| text.ends_with(trigger)))
         });
-    // FORK: review-stream
     let is_trigger_char = is_trigger_char || request::review::is_trigger(editor, text);
 
     let cursor_char = text

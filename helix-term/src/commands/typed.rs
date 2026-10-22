@@ -17,10 +17,9 @@ use helix_view::expansion;
 use serde_json::Value;
 use ui::completers::{self, Completer};
 
-// FORK: :yank-diagnostics
 mod yank_diagnostics;
 
-mod review_write; // FORK: review-stream
+mod review_write;
 
 #[derive(Clone)]
 pub struct TypableCommand {
@@ -387,7 +386,6 @@ fn write_impl(
     path: Option<&str>,
     options: WriteOptions,
 ) -> anyhow::Result<()> {
-    // FORK: review-stream
     if let Some(written) = review_write::write(cx, path, options) {
         return written;
     }
@@ -4076,7 +4074,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "review",
         aliases: &[],
@@ -4088,7 +4085,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "stage-hunk",
         aliases: &[],
@@ -4100,7 +4096,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "unstage-hunk",
         aliases: &[],
@@ -4112,7 +4107,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "review-restore",
         aliases: &[],
@@ -4124,7 +4118,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "review-context",
         aliases: &[],
@@ -4136,7 +4129,6 @@ pub const TYPABLE_COMMAND_LIST: &[TypableCommand] = &[
             ..Signature::DEFAULT
         },
     },
-    // FORK: review-stream
     TypableCommand {
         name: "review-refresh",
         aliases: &[],
