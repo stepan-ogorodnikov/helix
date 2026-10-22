@@ -13,13 +13,13 @@ A fork feature is opt-in or additive. Upstream defaults and config keep their me
 
 ## Git
 
-`master` mirrors `upstream/master`. Never commit to it. `fork` is `master` plus the fork's commits. Commit there.
+`main` is the fork's line. Commit there. `upstream/master` is upstream's.
 
 Never push to `helix-editor/helix`, and never open or comment on its pull requests and issues.
 
-Push `fork` only through `tools/fork/land.sh`, and only when the human asks. It checks the trailers, runs upstream's CI checks, and fast-forwards `origin/fork`. `tools/fork/land.sh --check` runs the same checks and pushes nothing.
+Push `main` only through `tools/fork/land.sh`, and only when the human asks. It runs the checks and fast-forwards `origin/main`. `tools/fork/land.sh --check` runs the same checks and pushes nothing. Nothing force-pushes `origin/main`.
 
-Move the stack onto a new upstream only when the human asks, as `agents/REBASE.md` says. It's the one time `origin/fork` is force-pushed.
+Take a change from upstream only when the human asks, by `git cherry-pick -x`.
 
 In a fork clone, `gh` picks the parent repository until `gh repo set-default stepan-ogorodnikov/helix` has run. Check `gh repo set-default --view` before using `gh`.
 
@@ -27,9 +27,9 @@ In a fork clone, `gh` picks the parent repository until `gh repo set-default ste
 
 Write the subject in the imperative and in sentence case, end it with a period, and leave out upstream's `area:` prefix. Say why in the body.
 
-End every commit on `fork` with one `Patch: <slug>` trailer, where the slug names a `FORK.md` entry. A commit serves one feature, so the feature can be dropped by its commits. `git log master..fork --grep '^Patch: <slug>$'` lists them.
+A commit does one thing, so it can be read and reverted alone.
 
-The hooks in `tools/fork/hooks` format, run clippy, and check the trailer. Fix what they report instead of committing with `--no-verify`.
+The `pre-commit` hook in `tools/fork/hooks` formats and runs clippy. Fix what it reports instead of committing with `--no-verify`.
 
 ## Hooks
 
@@ -61,6 +61,6 @@ Each phase's commit marks the phase done in the plan and records what the work f
 
 - `agents/HELIX.md`: upstream's docs and checks, where code lives, comment tags. Read it before changing Rust code.
 - `agents/TESTING.md`: which tests to write, where they go, and how to run them. Read it before writing or changing a test.
-- `agents/REVIEW.md`: how to review a diff on `fork`. Read it for any review.
+- `agents/REVIEW.md`: how to review a diff on `main`. Read it for any review.
 - `agents/REBASE.md`: moving the stack onto a new upstream.
 - `agents/VERIFY.md`: how to hand a user-visible change back for a check. Never run `hx` interactively or drive it through a terminal.

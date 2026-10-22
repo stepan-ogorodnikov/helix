@@ -1,6 +1,6 @@
 # Reviewing fork diffs
 
-How an agent reviews a diff on `fork`, such as `origin/fork..fork` or one commit.
+How an agent reviews a diff on `main`, such as `origin/main..main` or one commit.
 This isn't an authoring guide. The guides it cites are.
 
 For any review, read `AGENTS.md`, `agents/HELIX.md`, and this file.
@@ -36,7 +36,7 @@ Must be fixed before the change lands:
 - A seam in an upstream file without `// FORK: <slug>`: `AGENTS.md` (Hooks).
 - A newly touched upstream file, new config, or changed behavior without an update to the feature's `FORK.md` entry: `AGENTS.md` (Ledger).
 - A changed upstream default, or a feature that can't be left off: `AGENTS.md` (Fork).
-- A commit without exactly one `Patch:` trailer, or one that mixes features: `AGENTS.md` (Commits).
+- A commit that does more than one thing: `AGENTS.md` (Commits).
 - Changed behavior without a test where `agents/TESTING.md` (Layers) puts it.
 - A user-visible change without its book page, or with stale `book/src/generated/`: `agents/HELIX.md` (Upstream docs).
 - A non-obvious line without a tagged comment, or a comment that narrates: `agents/HELIX.md` (Comments).

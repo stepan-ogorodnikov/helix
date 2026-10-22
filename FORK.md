@@ -4,16 +4,14 @@ What this fork changes against upstream Helix, one entry per feature.
 `AGENTS.md` has the rules for writing fork code. `fork/<feature>.md` has a feature's plan.
 
 Update a feature's entry in the same commit as the feature.
-An entry's heading is the `Patch:` trailer on its commits, so `git log master..fork --grep '^Patch: <slug>$'` lists them.
-At a rebase, check each entry's "Drop when" against upstream, and drop the feature's commits when it holds.
 
-Upstream base: `master` at `ba40e547`.
+Fork point: upstream `ba40e547`, 2026-09-29.
 
 ## Branches
 
-- `master` mirrors `upstream/master`. Nothing else commits to it.
-- `fork` is `master` plus the patches below. It's the branch to build.
-- `origin/fork` only fast-forwards, through `tools/fork/land.sh`, except when the stack moves onto a new upstream.
+- `main` is the fork's line, the branch to build, and the default branch on GitHub.
+- `origin/main` only fast-forwards, through `tools/fork/land.sh`. Nothing force-pushes it.
+- `upstream/master` is upstream's line. `git merge-base main upstream/master` is the fork point, since cherry-picks don't change it.
 
 ## Setup
 
@@ -21,14 +19,13 @@ In a new clone:
 
 ```sh
 git remote add upstream https://github.com/helix-editor/helix.git
+git remote set-url --push upstream no_push
 gh repo set-default stepan-ogorodnikov/helix
 git config core.hooksPath tools/fork/hooks
 git config rerere.enabled true
 ```
 
-The hooks run on commit.
-`pre-commit` formats the crates the staged Rust files belong to, and runs clippy on them.
-`commit-msg` checks the `Patch:` trailer on `fork`.
+`pre-commit` runs on commit. It formats the crates the staged Rust files belong to, and runs clippy on them.
 `rerere` remembers how a conflict was resolved, for the next rebase onto upstream (`agents/REBASE.md`).
 
 ## Build
@@ -108,7 +105,7 @@ The hooks run on commit.
 
 - Status: active.
 - Plan: `fork/fork-infra.md`, and `fork/hard-fork.md` for the move to a hard fork.
-- Adds: the agent rules in `AGENTS.md` and `agents/`, this ledger, the commit hooks, and `tools/fork/land.sh`.
+- Adds: the agent rules in `AGENTS.md` and `agents/`, this ledger, the `pre-commit` hook, and `tools/fork/land.sh`.
 - Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `agents/`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
 - Removes: upstream's `.github/workflows/`, `.github/actions/`, `.github/dependabot.yml`, and `.github/FUNDING.yml`.
   `land.sh` is the only CI. `docs/CONTRIBUTING.md` no longer lists `build.yml` among the places that name the MSRV.

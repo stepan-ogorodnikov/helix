@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Lands fork on origin/fork. It checks the trailers on master..fork, runs
-# upstream's CI checks, then fast-forwards origin/fork.
-# It never force-pushes. Moving the stack onto a new upstream does that by hand,
-# as agents/REBASE.md says.
+# Lands main on origin/main. It runs the checks, then fast-forwards
+# origin/main. It never force-pushes, and nothing else pushes main.
 #
 # Usage: tools/fork/land.sh [--check]
 #   --check  run the checks and push nothing.
@@ -20,7 +18,7 @@ run() { echo "land: $*" >&2; "$@"; }
 
 cd "$(git rev-parse --show-toplevel)"
 
-[ "$(git symbolic-ref --quiet --short HEAD)" = fork ] || die "check out fork first."
+[ "$(git symbolic-ref --quiet --short HEAD)" = main ] || die "check out main first."
 [ -z "$(git status --porcelain --untracked-files=no)" ] || die "commit or stash the changes first."
 # WHY: an untracked source file can make the checks pass on code the commits
 # don't have. Untracked markdown, like a draft plan, can't.
@@ -29,26 +27,9 @@ untracked=$(git ls-files --others --exclude-standard -- . ':(exclude)*.md')
 
 git fetch --quiet origin
 if [ "$push" = 1 ]; then
-  git merge-base --is-ancestor origin/fork HEAD ||
-    die "fork has diverged from origin/fork. Rebase onto it, or push a rebased stack as agents/REBASE.md says."
-  [ -n "$(git rev-list origin/fork..HEAD)" ] || die "origin/fork already has every commit."
-fi
-
-# WHY: the whole stack, not just what origin/fork lacks, so --check also covers
-# a stack just moved onto a new upstream.
-problems=()
-for commit in $(git rev-list --reverse master..HEAD); do
-  subject=$(git log -1 --format='%h %s' "$commit")
-  slugs=$(git log -1 --format='%(trailers:key=Patch,valueonly)' "$commit" | sed '/^$/d')
-  if [ "$(printf '%s' "$slugs" | grep -c .)" -ne 1 ]; then
-    problems+=("$subject: needs exactly one Patch trailer")
-  elif ! git show HEAD:FORK.md | grep -qxF "### $slugs"; then
-    problems+=("$subject: FORK.md has no '### $slugs' entry")
-  fi
-done
-if [ ${#problems[@]} -gt 0 ]; then
-  printf 'land: %s\n' "${problems[@]}" >&2
-  exit 1
+  git merge-base --is-ancestor origin/main HEAD ||
+    die "main has diverged from origin/main. Rebase onto it and land again."
+  [ -n "$(git rev-list origin/main..HEAD)" ] || die "origin/main already has every commit."
 fi
 
 # INVARIANT: the fork's only CI. These are the checks upstream's build.yml ran
@@ -68,8 +49,8 @@ if [ "$push" = 0 ]; then
   exit 0
 fi
 
-# WHY: origin/fork can move while the checks run.
+# WHY: origin/main can move while the checks run.
 git fetch --quiet origin
-git merge-base --is-ancestor origin/fork HEAD ||
-  die "origin/fork moved during the checks. Rebase onto it and land again."
-run git push origin HEAD:refs/heads/fork
+git merge-base --is-ancestor origin/main HEAD ||
+  die "origin/main moved during the checks. Rebase onto it and land again."
+run git push origin HEAD:refs/heads/main
