@@ -22,11 +22,9 @@ git remote add upstream https://github.com/helix-editor/helix.git
 git remote set-url --push upstream no_push
 gh repo set-default stepan-ogorodnikov/helix
 git config core.hooksPath tools/fork/hooks
-git config rerere.enabled true
 ```
 
 `pre-commit` runs on commit. It formats the crates the staged Rust files belong to, and runs clippy on them.
-`rerere` remembers how a conflict was resolved, for the next rebase onto upstream (`agents/REBASE.md`).
 
 ## Build
 

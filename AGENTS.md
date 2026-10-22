@@ -14,13 +14,13 @@ Never push to `helix-editor/helix`, and never open or comment on its pull reques
 
 Push `main` only through `tools/fork/land.sh`, and only when the human asks. It runs the checks and fast-forwards `origin/main`. `tools/fork/land.sh --check` runs the same checks and pushes nothing. Nothing force-pushes `origin/main`.
 
-Take a change from upstream only when the human asks, by `git cherry-pick -x`.
+Take a change from upstream only when the human asks, by cherry-pick, as `agents/UPSTREAM.md` says.
 
 In a fork clone, `gh` picks the parent repository until `gh repo set-default stepan-ogorodnikov/helix` has run. Check `gh repo set-default --view` before using `gh`.
 
 ## Commits
 
-Write the subject in the imperative and in sentence case, end it with a period, and leave out upstream's `area:` prefix. Say why in the body.
+Write the subject in the imperative and in sentence case, end it with a period, and leave out upstream's `area:` prefix. Say why in the body. A commit picked from upstream keeps upstream's message.
 
 A commit does one thing, so it can be read and reverted alone.
 
@@ -47,5 +47,5 @@ Each phase's commit marks the phase done in the plan and records what the work f
 - `agents/HELIX.md`: upstream's docs and checks, where code lives, comment tags. Read it before changing Rust code.
 - `agents/TESTING.md`: which tests to write, where they go, and how to run them. Read it before writing or changing a test.
 - `agents/REVIEW.md`: how to review a diff on `main`. Read it for any review.
-- `agents/REBASE.md`: moving the stack onto a new upstream.
+- `agents/UPSTREAM.md`: taking changes from upstream by cherry-pick.
 - `agents/VERIFY.md`: how to hand a user-visible change back for a check. Never run `hx` interactively or drive it through a terminal.
