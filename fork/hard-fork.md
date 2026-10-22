@@ -61,7 +61,7 @@ Each item is one commit. Items 0–2 carry `Patch: fork-infra`, since the traile
 | 2 | Done | Rename fork to main, and land without trailers. | `land.sh`: branch `main`, `origin/main`, no trailer loop. Delete `commit-msg`. `AGENTS.md` (Git, Commits), `FORK.md` (Branches, Setup). Then, at the human's ask: `git branch -m fork main`, `land.sh --check`, `git push -u origin main` once by hand, since `land.sh` needs `origin/main` to exist, `gh repo edit --default-branch main`, `git push origin --delete fork master`, `git branch -D master`, `git remote set-head origin -a`, `git remote set-url --push upstream no_push`. |
 | 3 | Done | Rewrite the rules for a hard fork. | `AGENTS.md` (Fork and Hooks become a short Code section), `HELIX.md` (Comments, Change discipline), `TESTING.md` (test homes, upstream tests are ours), `REVIEW.md` (Blocking, Noise), `VERIFY.md` wording. `AGENTS.md` (Plans): done plans are history, and their rules may be stale. The `align-message` ruling loses "though fork features are otherwise opt-in". |
 | 4 | Done | Replace the rebase playbook with a cherry-pick guide. | `agents/UPSTREAM.md`, delete `agents/REBASE.md`, the guide list in `AGENTS.md`, and the `rerere` line in `FORK.md` (Setup). |
-| 5 | | Turn the patch ledger into a feature list. | `FORK.md`: each entry keeps what it adds, where it lives, what upstream code it copies or relies on, and its rulings. "Status", "Upstream files", "Upstream refs", "Drop when", and the Gaps about markers go. `AGENTS.md` (Ledger) and `REVIEW.md`'s anchors follow. |
+| 5 | Done | Turn the patch ledger into a feature list. | `FORK.md`: each entry keeps what it adds, where it lives, what upstream code it copies or relies on, and its rulings. "Status", "Upstream files", "Upstream refs", "Drop when", and the Gaps about markers go. `AGENTS.md` (Ledger) and `REVIEW.md`'s anchors follow. |
 | 6 | | Remove the FORK markers and the fork_ test prefix. | 57 marker lines in 25 files. Bare marker lines go, and `//! FORK: <slug>.` doc lines keep their text. `fork_review.rs`, `fork_review/`, and `fork_statusline.rs` lose the prefix, with their `mod` lines. |
 
 Item 2 is the one with outward steps, so it goes as early as item 1 allows.
@@ -103,3 +103,8 @@ The human approved the plan with the answer it assumed to each question.
 - Item 4: upstream squashes most pull requests into one commit, 26 of its last 30, so `UPSTREAM.md` picks a commit at a time and covers the odd merge commit with `-m 1`.
   A picked commit keeps upstream's message. The fork's commit style is for its own commits.
   `rerere` left the setup. It only paid off when the same conflicts came back at every rebase.
+- Item 5: "Upstream files" split three ways. Where a feature plugs in went under Code, couplings under "Relies on", and seam-only lines went: `mod` lines, command rows, `slotmap`, and the `mod fork_*;` lines.
+  `changed-files-views` keeps upstream's #9951 and #16252 under "Relies on", since taking either means redoing the staged walk. The other upstream refs went.
+  `picker-keys`' ruling that the key table lives outside `editor.rs` went. It only followed from the hot-file rule.
+  The `Editor::switch` condition's ruling became a line under Code. It called the condition the one seam in a hot-file function, and only why it exists still holds.
+  `AGENTS.md`'s Ledger section is now Features, and says a fix or a cleanup needs no entry. Without the trailer, no commit needs one.

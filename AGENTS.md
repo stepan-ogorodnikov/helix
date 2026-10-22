@@ -26,9 +26,9 @@ A commit does one thing, so it can be read and reverted alone.
 
 The `pre-commit` hook in `tools/fork/hooks` formats and runs clippy. Fix what it reports instead of committing with `--no-verify`.
 
-## Ledger
+## Features
 
-`FORK.md` lists every fork feature: what it touches upstream, and when to drop it. Update a feature's entry in the same commit as the feature.
+`FORK.md` lists every fork feature: what it adds, where its code, tests, and book pages are, and what upstream code it copies or relies on. Update a feature's entry in the same commit as the feature. A fix or a cleanup needs no entry.
 
 ## Plans
 

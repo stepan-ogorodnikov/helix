@@ -18,7 +18,7 @@ If code outside the diff breaks a rule, mention it once, under Out of scope.
 Acceptable anchors:
 
 - A guide and section: `AGENTS.md` (Commits), `agents/HELIX.md` (Comments), `agents/TESTING.md` (Banned).
-- A ledger entry: `FORK.md` (picker-keys).
+- A feature entry: `FORK.md` (picker-keys).
 - A plan item: `fork/<feature>.md`, with the item and what it says.
 - A book page the behavior contradicts: `book/src/keymap.md`.
 - A clippy lint, or a check `tools/fork/land.sh` runs.
@@ -32,7 +32,7 @@ With no anchor, there's no finding.
 Must be fixed before the change lands:
 
 - Wrong behavior, a broken invariant, or behavior that contradicts the book or the plan.
-- A newly touched upstream file, new config, or changed behavior without an update to the feature's `FORK.md` entry: `AGENTS.md` (Ledger).
+- New config, changed behavior, or a new copy of upstream code without an update to the feature's `FORK.md` entry: `AGENTS.md` (Features).
 - A commit that does more than one thing: `AGENTS.md` (Commits).
 - Changed behavior without a test where `agents/TESTING.md` (Layers) puts it.
 - A user-visible change without its book page, or with stale `book/src/generated/`: `agents/HELIX.md` (Upstream docs).
