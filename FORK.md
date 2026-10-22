@@ -88,6 +88,22 @@ The hooks run on commit.
 - Tests: two unit tests in `yank_diagnostics.rs`.
 - Drop when: upstream adds a command that yanks all diagnostics.
 
+### align-message
+
+- Status: active.
+- Adds: the message below the statusline is drawn one column in, under the statusline's first text.
+  Upstream draws it from column 0, while the statusline's elements pad themselves with a leading space.
+- Upstream files:
+  - `helix-term/src/ui/editor.rs`: the indent where `render` draws the status message.
+  - `helix-term/src/application.rs`: `terminal_buffer`, a test-only accessor to the drawn screen, under the `integration` feature.
+  - `helix-term/tests/integration.rs`: `mod fork_statusline;`.
+- Fork-owned: `helix-term/tests/test/fork_statusline.rs`.
+- Tests: `status_message_starts_under_the_statusline_text` in `fork_statusline.rs` reads the drawn bottom row.
+- Drop when: upstream lines the message up with the statusline.
+- Rulings: the indent is always on, with no config key, by the human's call, though fork features are otherwise opt-in.
+  Dropping the feature's commit brings back upstream's layout.
+- Gaps: the command line prompt (`:`) on the same row still starts at column 0.
+
 ### fork-infra
 
 - Status: active.

@@ -20,6 +20,8 @@ mod test {
     mod commands;
     // FORK: review-stream
     mod fork_review;
+    // FORK: align-message
+    mod fork_statusline;
     mod movement;
     mod splits;
 }

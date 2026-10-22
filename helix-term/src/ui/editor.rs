@@ -1666,10 +1666,13 @@ impl Component for EditorView {
 
         let key_width = 15u16; // for showing pending keys
         let mut status_msg_width = 0;
+        // FORK: align-message
+        // WHY: the statusline's elements start with a space, and the message lines up with their text.
+        let status_msg_indent = 1u16;
 
         // render status msg
         if let Some((status_msg, severity)) = &cx.editor.status_msg {
-            status_msg_width = status_msg.width();
+            status_msg_width = status_msg.width() + status_msg_indent as usize;
             use helix_view::editor::Severity;
             let style = if *severity == Severity::Error {
                 cx.editor.theme.get("error")
@@ -1678,7 +1681,7 @@ impl Component for EditorView {
             };
 
             surface.set_string(
-                area.x,
+                area.x + status_msg_indent,
                 area.y + area.height.saturating_sub(1),
                 status_msg,
                 style,

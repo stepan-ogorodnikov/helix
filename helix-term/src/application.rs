@@ -258,6 +258,12 @@ impl Application {
         Ok(app)
     }
 
+    // FORK: align-message
+    #[cfg(feature = "integration")]
+    pub fn terminal_buffer(&self) -> &tui::buffer::Buffer {
+        self.terminal.backend().buffer()
+    }
+
     async fn render(&mut self) {
         if self.compositor.full_redraw {
             self.terminal.clear().expect("Cannot clear the terminal");
