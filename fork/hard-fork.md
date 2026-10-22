@@ -3,7 +3,7 @@
 Snapshot: `fork` at `00978fad`, on upstream `master` at `ba40e547` (2026-09-29).
 Upstream had nothing newer on 2026-10-22, so the fork starts current and needs no last rebase.
 
-Status: items 0–6 are committed. Item 2's steps on GitHub wait for the human's go.
+Status: done 2026-10-22. `main` is the default branch on GitHub, and `fork` and `master` are gone there.
 
 ## Bottom line
 
@@ -112,3 +112,5 @@ The human approved the plan with the answer it assumed to each question.
   `AGENTS.md`'s Ledger section is now Features, and says a fix or a cleanup needs no entry. Without the trailer, no commit needs one.
 - Item 6: the 57 markers were 44 comment lines, 7 trailing comments on `mod` lines, and 6 `//!` prefixes. Three carried a note instead of a slug, like `// FORK: picker key table.`, and went too.
   The renamed test modules collide with nothing, and rustfmt sorted their `mod` lines. `cargo integration-test -- review statusline` ran 47 tests, with the rust-analyzer one ignored as before.
+- Item 2's GitHub steps ran after item 6, with `land.sh --check` passing on the final tree first. The repository lists no workflows, and the push started no runs.
+  `land.sh --check` hit DNS failures for github.com twice in a background shell: once at its fetch, once in docgen's grammar fetch. Both passed when rerun.
