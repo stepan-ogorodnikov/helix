@@ -1,4 +1,4 @@
-# Verifying fork changes
+# Verifying changes
 
 Tests cover what they can reach.
 For the rest, the agent writes a short brief, and the human checks it in `hx`.

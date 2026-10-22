@@ -97,7 +97,7 @@ git config rerere.enabled true
 - Fork-owned: `helix-term/tests/test/fork_statusline.rs`.
 - Tests: `status_message_starts_under_the_statusline_text` in `fork_statusline.rs` reads the drawn bottom row.
 - Drop when: upstream lines the message up with the statusline.
-- Rulings: the indent is always on, with no config key, by the human's call, though fork features are otherwise opt-in.
+- Rulings: the indent is always on, with no config key, by the human's call.
   Dropping the feature's commit brings back upstream's layout.
 - Gaps: the command line prompt (`:`) on the same row still starts at column 0.
 

@@ -1,6 +1,6 @@
-# Testing fork code
+# Testing
 
-Which tests to write for a fork change, where they go, and how to run them.
+Which tests to write for a change, where they go, and how to run them.
 `agents/VERIFY.md` covers what tests can't show.
 
 ## The survival question
@@ -23,8 +23,8 @@ Pure wiring needs no test: a command-table row, a `mod` line, a re-export, or a 
 
 | Layer | Owns | Where |
 | --- | --- | --- |
-| Unit | Logic that needs no running editor: config merging, git status, list filtering, row math | `#[cfg(test)] mod tests` in the fork-owned file. Git fixtures go in `helix-vcs/src/git/test.rs`. |
-| Integration | What keys do to the editor: commands, picker actions, what ends up open, selected, or yanked | `helix-term/tests/test/fork_<area>.rs`, plus one `mod fork_<area>;` line in `helix-term/tests/integration.rs` |
+| Unit | Logic that needs no running editor: config merging, git status, list filtering, row math | `#[cfg(test)] mod tests` in the file that holds the logic. Git fixtures go in `helix-vcs/src/git/test.rs`. |
+| Integration | What keys do to the editor: commands, picker actions, what ends up open, selected, or yanked | The file in `helix-term/tests/test/` for the area, or a new `<area>.rs` there, plus its `mod` line in `helix-term/tests/integration.rs` |
 
 ## One home per behavior
 
@@ -54,7 +54,7 @@ If you add a second test of one rule anyway, put one `// WHY:` line above it.
 A test's name says what its assertion checks.
 
 When a change already edits a test file, delete that file's tests that fail the survival question or are banned, in the same commit.
-Don't touch upstream tests unless the change breaks them.
+Upstream's tests are the fork's own. A change that makes one wrong updates or deletes it.
 
 ## Integration harness
 
@@ -72,7 +72,6 @@ Don't touch upstream tests unless the change breaks them.
 - Tests run in parallel in one process, so none can change the working directory.
   The changed-files picker walks the working directory, so its keys have no end-to-end test. Test the walk in `helix-vcs` instead.
 - Build a git fixture in a temporary directory, as `empty_git_repo` and `create_commit` in `helix-vcs/src/git/test.rs` do.
-- A test-only accessor in an upstream file is a seam. Mark it and list it in the ledger like any other.
 
 `splits.rs` shows the closure style.
 `config.rs`'s `picker_keys_overlay_defaults_and_nop_unbinds` and `git/test.rs`'s `changed_files_include_staged_and_unstaged` are the fork's unit examples.

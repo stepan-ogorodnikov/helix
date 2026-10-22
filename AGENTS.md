@@ -1,15 +1,10 @@
 # Fork
 
-This is a soft fork of Helix. New fork behavior does not grow the files upstream rewrites most often. A field, a match arm, or a command-table row may stay in those files, because that is where upstream applies the change. A new block of logic goes in a file upstream has never had.
+This is a hard fork of Helix. It no longer rebases onto upstream, so upstream's code is the fork's own. Change it where the work needs it, its defaults and behavior included. A config key is for a choice the human wants to keep, not for keeping upstream's behavior.
 
-Hot files:
+Put code where it reads best. A large feature still gets its own module, as the review does in `helix-view/src/review/` and `helix-term/src/commands/review/`. Update the call sites and delete the old code instead of keeping a shim.
 
-- `helix-term/src/commands.rs`
-- `helix-term/src/commands/typed.rs`
-- `helix-view/src/editor.rs`
-- `helix-view/src/document.rs`
-
-A fork feature is opt-in or additive. Upstream defaults and config keep their meaning, so any feature can be dropped. Inside fork code, update the call sites and delete the old code instead of keeping a shim.
+Some fork code still has the soft fork's shapes: thin wrappers in `commands.rs` and `typed.rs` with the body in a module of its own, and copies of upstream code instead of a shared function. Fold one back only when a change has its own reason to touch it.
 
 ## Git
 
@@ -31,25 +26,15 @@ A commit does one thing, so it can be read and reverted alone.
 
 The `pre-commit` hook in `tools/fork/hooks` formats and runs clippy. Fix what it reports instead of committing with `--no-verify`.
 
-## Hooks
-
-Mark each hook with `// FORK: <slug>`, where the slug names its `FORK.md` entry. `rg 'FORK:'` lists every seam, and `rg 'FORK: <slug>'` one feature's.
-
-A static command stays as a wrapper in `commands.rs`. `static_commands!` binds the function by name in that module. Move the body to `helix-term/src/commands/<name>.rs` and call it from the wrapper. `changed_file_picker` is the example.
-
-A typable command keeps its row in `TYPABLE_COMMAND_LIST`. Point `fun` at the moved function. If the body calls a private helper in `typed.rs`, nest the module at `helix-term/src/commands/typed/<name>.rs`. A child module can call the parent's private items, so the helper stays private. `:yank-diagnostics` calls `yank_register` this way.
-
-A config field stays on the upstream struct. Move the table to a sibling module and re-export it, so existing paths keep working. `Config::picker_keys` re-exports `picker_keys::PickerCommand` this way.
-
-Move tests with the body. Remove imports the hot file no longer uses.
-
 ## Ledger
 
 `FORK.md` lists every fork feature: what it touches upstream, and when to drop it. Update a feature's entry in the same commit as the feature.
 
 ## Plans
 
-A fork feature that takes more than one commit gets a plan in `fork/<feature>.md`. A small fix doesn't.
+A feature that takes more than one commit gets a plan in `fork/<feature>.md`. A small fix doesn't.
+
+A plan whose phases are all done is history. The rules it quotes may be older than these.
 
 Ask the human every question whose answer changes the plan, like scope, order, or approach, instead of guessing. Commit the plan before the code. Implement only after the human approves the plan and asks for the work.
 
