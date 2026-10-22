@@ -110,6 +110,8 @@ The hooks run on commit.
 - Plan: `fork/fork-infra.md`, and `fork/hard-fork.md` for the move to a hard fork.
 - Adds: the agent rules in `AGENTS.md` and `agents/`, this ledger, the commit hooks, and `tools/fork/land.sh`.
 - Files: `AGENTS.md`, `FORK.md`, `fork/*.md`, `agents/`, `tools/fork/`. All fork-owned. Upstream has never had these paths.
+- Removes: upstream's `.github/workflows/`, `.github/actions/`, `.github/dependabot.yml`, and `.github/FUNDING.yml`.
+  `land.sh` is the only CI. `docs/CONTRIBUTING.md` no longer lists `build.yml` among the places that name the MSRV.
 - Drop when: never.
 
 ### review-stream

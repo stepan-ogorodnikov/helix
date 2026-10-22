@@ -51,8 +51,9 @@ if [ ${#problems[@]} -gt 0 ]; then
   exit 1
 fi
 
-# INVARIANT: the same checks as upstream's build.yml, minus the runtime query
-# and theme checks, which only cover runtime/.
+# INVARIANT: the fork's only CI. These are the checks upstream's build.yml ran
+# at the fork point, minus the runtime query and theme checks, which only cover
+# runtime/.
 run cargo fmt --all --check
 run cargo clippy --workspace --all-targets -- -D warnings
 run env RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace --document-private-items

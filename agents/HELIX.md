@@ -9,7 +9,7 @@ Upstream's docs come first. This guide points to them and adds what fork code ne
 - `docs/architecture.md`: what each crate owns.
 - `book/src/`: the user docs.
   A fork feature updates the page that owns the behavior, in place, and its `FORK.md` entry lists the page.
-- `.github/workflows/build.yml`: the checks `tools/fork/land.sh` runs.
+- `tools/fork/land.sh`: the fork's only CI, the checks upstream's `build.yml` ran at the fork point.
   A change under `runtime/` also needs the `cargo xtask` check for what it touches: `query-check`, `indent-check`, `highlight-check`, or `theme-check`.
 
 Rust 1.90 is both the MSRV and the pinned toolchain (`rust-toolchain.toml`).

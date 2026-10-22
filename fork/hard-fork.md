@@ -57,7 +57,7 @@ Each item is one commit. Items 0–2 carry `Patch: fork-infra`, since the traile
 | # | Status | Commit | Scope |
 | --- | --- | --- | --- |
 | 0 | Done | Add the hard fork plan. | This file, and the plan line in `FORK.md`'s `fork-infra` entry. |
-| 1 | | Remove upstream's CI, release, and funding files. | `.github/workflows/`, `.github/actions/`, `dependabot.yml`, `FUNDING.yml`. `HELIX.md` and the comment in `land.sh` stop pointing at `build.yml`. It goes before `main` reaches GitHub, so upstream's nightly `schedule` never runs on the new default branch. |
+| 1 | Done | Remove upstream's CI, release, and funding files. | `.github/workflows/`, `.github/actions/`, `dependabot.yml`, `FUNDING.yml`. `HELIX.md` and the comment in `land.sh` stop pointing at `build.yml`. It goes before `main` reaches GitHub, so upstream's nightly `schedule` never runs on the new default branch. |
 | 2 | | Rename fork to main, and land without trailers. | `land.sh`: branch `main`, `origin/main`, no trailer loop. Delete `commit-msg`. `AGENTS.md` (Git, Commits), `FORK.md` (Branches, Setup). Then, at the human's ask: `git branch -m fork main`, `land.sh --check`, `git push -u origin main` once by hand, since `land.sh` needs `origin/main` to exist, `gh repo edit --default-branch main`, `git push origin --delete fork master`, `git branch -D master`, `git remote set-head origin -a`, `git remote set-url --push upstream no_push`. |
 | 3 | | Rewrite the rules for a hard fork. | `AGENTS.md` (Fork and Hooks become a short Code section), `HELIX.md` (Comments, Change discipline), `TESTING.md` (test homes, upstream tests are ours), `REVIEW.md` (Blocking, Noise), `VERIFY.md` wording. `AGENTS.md` (Plans): done plans are history, and their rules may be stale. The `align-message` ruling loses "though fork features are otherwise opt-in". |
 | 4 | | Replace the rebase playbook with a cherry-pick guide. | `agents/UPSTREAM.md`, delete `agents/REBASE.md`, the guide list in `AGENTS.md`, and the `rerere` line in `FORK.md` (Setup). |
@@ -88,3 +88,7 @@ The human approved the plan with the answer it assumed to each question.
 - Rewriting `fork/fork-infra.md` and `fork/review-stream.md`. They're done, and stay as history.
 
 ## Found
+
+- Item 1: `docs/CONTRIBUTING.md` named `build.yml`'s `env.MSRV` as one of three places to bump the MSRV. The bullet went with the file.
+  `.github/ISSUE_TEMPLATE/` stays for the rename plan. Issues are off on the GitHub repo, so nothing reads it.
+  `REBASE.md` still warns that pushing `master` starts upstream's workflows. That holds until item 2 deletes `master`, since `master` still has them.
